@@ -1,0 +1,27 @@
+{
+  "name": "captain-xmd",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Captain XMD personal WhatsApp bot and dashboard API",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check index.js && node --check config.js && node --check lib/supabase.js && node --check lib/user-settings.js && node --check lib/utils.js && node --check lib/handler.js && node --check lib/sessions/manager.js && node --check lib/sessions/context.js && node --check lib/sessions/token-vault.js && node --check lib/sessions/storage.js && node --check lib/sessions/encryption.js && node --check lib/sessions/socket-factory.js && node --check lib/sessions/connection-manager.js && node --check lib/sessions/baileys-auth.js && node --check lib/sessions/persistent-token-store.js && node --check commands/index.js && node --check commands/general.js && node --check commands/group.js && node --check commands/ai.js && node --check commands/downloader.js && node --check commands/sticker.js && node --check commands/admin.js && node --check commands/fun.js && node --check commands/tools.js && node --check public/app.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "@whiskeysockets/baileys": "6.7.24",
+    "dotenv": "^16.4.7",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
+    "helmet": "^8.3.0",
+    "pino": "9.6.0",
+    "qrcode": "1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "0.32.6",
+    "yt-search": "2.12.1"
+  }
+}

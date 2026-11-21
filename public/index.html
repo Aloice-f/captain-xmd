@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090b10">
+  <meta name="description" content="Connect your WhatsApp account to Captain XMD using a secure pairing code.">
+  <title>Captain XMD | WhatsApp Pairing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <header class="topbar"><a class="brand" href="/"><span class="brand-mark">C</span><span>CAPTAIN <b>XMD</b></span></a><span class="secure"><i></i> SECURE PAIRING</span></header>
+  <main class="shell">
+    <section class="hero"><div class="eyebrow"><span></span> WHATSAPP AUTOMATION</div><h1>Your WhatsApp.<br><em>Your commands.</em></h1><p>Connect your account to Captain XMD in seconds. No account registration required.</p></section>
+    <section class="panel" aria-labelledby="connectTitle">
+      <div class="panel-head"><div><div class="step">01 <span>— CONNECT DEVICE</span></div><h2 id="connectTitle">Generate pairing code</h2></div><div class="wa-mark">✆</div></div>
+      <form id="pairForm">
+        <label for="phoneNumber">WhatsApp phone number</label>
+        <div class="phone-wrap"><span class="plus">＋</span><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" placeholder="254712345678" minlength="8" maxlength="16" required></div>
+        <small>Include your country code. Example: 254712345678</small>
+        <button id="connectButton" type="submit"><span>Generate pairing code</span><b>↗</b></button>
+      </form>
+      <div id="message" class="message" role="status" aria-live="polite">Your number is used only to request a WhatsApp pairing code.</div>
+      <section id="codePanel" class="code-panel hidden"><div class="code-label">YOUR PAIRING CODE</div><div class="code-row"><strong id="pairCode">--------</strong><button id="copyCode" type="button" aria-label="Copy pairing code">COPY</button></div><p>Enter this code on your phone. Do not share it with anyone.</p></section>
+      <div class="status-line"><span class="status-dot" id="statusDot"></span><span id="statusText">NOT CONNECTED</span><span class="status-spacer"></span><button id="refreshStatus" type="button">REFRESH STATUS</button></div>
+    </section>
+    <section class="instructions"><div class="step">02 <span>— LINK YOUR DEVICE</span></div><h2>Finish on WhatsApp</h2><ol><li>Open WhatsApp on your phone.</li><li>Go to <b>Settings → Linked devices</b>.</li><li>Tap <b>Link a device</b>, then choose <b>Link with phone number instead</b>.</li><li>Enter the pairing code shown above.</li></ol></section>
+    <section class="notice"><span>✦</span><p><b>Privacy first.</b> Captain XMD never asks for your WhatsApp password, SMS verification code, or session file. Pair only on your own device.</p></section>
+    <footer>© <span id="year"></span> CAPTAIN XMD <span>•</span> BUILT FOR CONTROL</footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

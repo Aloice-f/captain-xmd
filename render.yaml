@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: captain-xmd
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: PAIR_NUMBER
+        sync: false
+      - key: OWNER_NUMBER
+        sync: false
+      - key: PAIR_PASSWORD
+        sync: false
+      - key: BOT_NAME
+        value: Captain-XMD
+      - key: PREFIX
+        value: "."
+      - key: SESSION_ID
+        value: captain-xmd

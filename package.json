@@ -1,0 +1,21 @@
+{
+  "name": "captain-xmd",
+  "version": "1.0.0",
+  "description": "Captain-XMD WhatsApp bot (Baileys) with Supabase session storage, ready for Render",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.14.4",
+    "@supabase/supabase-js": "^2.45.0",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "dotenv": "^16.4.5",
+    "pino": "^9.4.0",
+    "yt-search": "^2.12.1"
+  }
+}

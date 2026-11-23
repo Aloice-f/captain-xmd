@@ -313,6 +313,12 @@ async function refreshPublic(){try{paintStatus(await(await fetch('/api/status'))
 
 /* ---------- bots ---------- */
 function pill(s){if(s.connection==='open')return['on','ONLINE'];if(s.connection==='replaced')return['bad','TAKEN OVER'];if(s.linked)return['wait','STARTING'];if(s.connection==='connecting')return['wait','PAIRING'];return['off','NOT LINKED']}
+function maskNumber(value){
+  const digits=String(value||'').replace(/\D/g,'')
+  if(!digits)return ''
+  if(digits.length<=5)return digits[0]+'•'.repeat(Math.max(0,digits.length-2))+digits.slice(-1)
+  return digits.slice(0,3)+'•'.repeat(Math.max(4,digits.length-6))+digits.slice(-3)
+}
 function card(s){
   const [cls,label]=pill(s)
   const number=s.linkedNumber||s.ownerNumber
@@ -321,7 +327,7 @@ function card(s){
       <div class="bot-top">
         <div>
           <div class="bot-name">${esc(s.label)}</div>
-          <div class="bot-num">${number?'+'+esc(number):'not linked yet'}</div>
+          <div class="bot-num">${number?'+'+esc(maskNumber(number)):'not linked yet'}</div>
         </div>
         <span class="pill ${cls}" title="${esc(s.error||'')}" aria-hidden="true">${label}</span>
       </div>

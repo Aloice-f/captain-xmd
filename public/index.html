@@ -147,7 +147,7 @@ footer{padding:18px 22px 30px;text-align:center;color:var(--dim);font-size:12px}
   <!-- bot list -->
   <section class="panel" id="bots">
     <div class="win"><div class="winbar"><div class="win-dots"><div class="win-dot r"></div><div class="win-dot y"></div><div class="win-dot g"></div></div><span class="win-title">bots.list</span></div></div>
-    <div class="bar"><span></span><span></span><span></span><em>bots.list</em>
+    <div class="bar"><span></span><span></span><span></span>
       <span class="right-end">node:captain-lab-01</span></div>
     <div class="body">
       <div class="eyebrow">LIVE FLEET TELEMETRY</div>
@@ -313,15 +313,21 @@ async function refreshPublic(){try{paintStatus(await(await fetch('/api/status'))
 
 /* ---------- bots ---------- */
 function pill(s){if(s.connection==='open')return['on','ONLINE'];if(s.connection==='replaced')return['bad','TAKEN OVER'];if(s.linked)return['wait','STARTING'];if(s.connection==='connecting')return['wait','PAIRING'];return['off','NOT LINKED']}
+function maskNumber(value){
+  const digits=String(value||'').replace(/\D/g,'')
+  if(!digits)return ''
+  if(digits.length<=6)return digits.slice(0,1)+'•'.repeat(Math.max(0,digits.length-2))+digits.slice(-1)
+  return digits.slice(0,3)+'•'.repeat(digits.length-6)+digits.slice(-3)
+}
 function card(s){
   const [cls,label]=pill(s)
-  const number=s.linkedNumber||s.ownerNumber
+  const number=maskNumber(s.linkedNumber||s.ownerNumber)
   return`
     <article class="bot">
       <div class="bot-top">
         <div>
           <div class="bot-name">${esc(s.label)}</div>
-          <div class="bot-num">${number?'+'+esc(number):'not linked yet'}</div>
+          ${number?`<div class="bot-num">+${esc(number)}</div>`:''}
         </div>
         <span class="pill ${cls}" title="${esc(s.error||'')}" aria-hidden="true">${label}</span>
       </div>

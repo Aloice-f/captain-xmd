@@ -261,7 +261,7 @@ footer{padding:18px 22px 30px;text-align:center;color:var(--dim);font-size:12px}
 
 </main>
 
-<audio id="song" src="/song" loop preload="auto"></audio>
+<audio id="song" src="/song" loop preload="auto" autoplay></audio>
 <footer>CAPTAIN BOT · SIGNAL LAB · READ-ONLY UPLINK NODE</footer>
 
 <script>
@@ -482,11 +482,14 @@ setInterval(()=>{
 /* ---------- theme song ---------- */
 const song=$('song'),music=$('music');let userPaused=false
 const setPlaying=on=>{music.setAttribute('aria-pressed',String(on));music.textContent=on?'♪ pause':'♪ theme'}
-async function playSong(){try{await song.play();setPlaying(true);return true}catch(e){console.error('Song error:',e.name,song.error&&song.error.message);return false}}
-async function explainFailure(){let why='browser could not play it';try{const r=await fetch('/song',{headers:{Range:'bytes=0-0'}});if(r.status===404)why='server has no song'}catch{why='server offline'};music.textContent='♪ '+why}
-music.addEventListener('click',async()=>{if(!song.paused){userPaused=true;song.pause();setPlaying(false);return}userPaused=false;if(!(await playSong()))explainFailure()})
-song.preload='auto'
-playSong().then(ok=>{if(ok)return;const start=async()=>{if(userPaused||!song.paused)return cleanup();if(await playSong())cleanup()};const events=['pointerdown','keydown','touchstart'];const cleanup=()=>events.forEach(ev=>removeEventListener(ev,start));events.forEach(ev=>addEventListener(ev,start))})
+async function playSong(){try{song.muted=false;await song.play();setPlaying(true);return true}catch(e){console.warn('Autoplay blocked or song failed:',e.name,song.error&&song.error.message);return false}}
+async function explainFailure(){let why='browser blocked autoplay';try{const r=await fetch('/song',{headers:{Range:'bytes=0-0'}});if(r.status===404)why='server has no song'}catch{why='server offline'};music.textContent='♪ '+why}
+function removeAutoplayListeners(){['pointerdown','keydown','touchstart'].forEach(ev=>window.removeEventListener(ev,startOnInteraction))}
+async function startOnInteraction(){if(userPaused||!song.paused){removeAutoplayListeners();return}if(await playSong())removeAutoplayListeners()}
+music.addEventListener('click',async()=>{if(!song.paused){userPaused=true;song.pause();setPlaying(false);removeAutoplayListeners();return}userPaused=false;if(!(await playSong()))explainFailure()})
+song.preload='auto';song.autoplay=true;song.loop=true;song.muted=false
+// Attempt immediate autoplay on page load. Browsers may reject unmuted autoplay.
+playSong().then(ok=>{if(ok)return;['pointerdown','keydown','touchstart'].forEach(ev=>window.addEventListener(ev,startOnInteraction,{once:true}));explainFailure()})
 </script>
 </body>
 </html>

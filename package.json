@@ -1,7 +1,7 @@
 {
   "name": "captain-xmd",
-  "version": "1.0.0",
-  "description": "Captain-XMD WhatsApp bot (Baileys) with Supabase session storage, ready for Render",
+  "version": "3.0.0",
+  "description": "Captain-XMD multi-bot WhatsApp platform (Baileys) with Supabase sessions and a pairing dashboard, ready for Render",
   "type": "module",
   "main": "src/index.js",
   "scripts": {

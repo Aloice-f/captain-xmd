@@ -25,3 +25,31 @@ export async function setSetting(chat, key, value) {
   if (error) throw new Error(`Could not save setting (did you run the new SQL in supabase/schema.sql?): ${error.message}`)
   cache.set(`${chat}|${key}`, { v: value, t: Date.now() })
 }
+
+/**
+ * Settings for one bot. Rows are namespaced (`session:<id>:<chat>`) so two bots that
+ * sit in the same group keep separate welcome/antilink settings.
+ * Reads fall back to the old un-namespaced rows once, so upgrading does not reset settings.
+ */
+export function scopedStore(scope) {
+  const chatId = (chat) => `${scope}:${chat}`
+  return {
+    async get(chat, key, fallback = null) {
+      const current = await getSetting(chatId(chat), key, undefined)
+      if (current !== undefined) return current
+      const legacy = await getSetting(chat, key, undefined)
+      if (legacy !== undefined) await setSetting(chatId(chat), key, legacy).catch(() => {})
+      return legacy !== undefined ? legacy : fallback
+    },
+    set: (chat, key, value) => setSetting(chatId(chat), key, value)
+  }
+}
+
+/** Metadata for the dashboard (label, numbers). Session credentials live in wa_sessions. */
+export async function updateSessionRow(id, patch) {
+  const { error } = await supabase
+    .from('bot_sessions')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw new Error(`Could not update bot: ${error.message}`)
+}

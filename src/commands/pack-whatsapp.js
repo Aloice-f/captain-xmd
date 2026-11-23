@@ -1,5 +1,4 @@
 import { getMedia, getQuoted, getTargets, sleep, tag } from '../utils.js'
-import { setSetting } from '../store.js'
 
 const toJid = (s) => `${String(s).replace(/\D/g, '')}@s.whatsapp.net`
 const onOff = (v) => ['on', 'true', 'yes', 'enable'].includes((v || '').toLowerCase())
@@ -70,15 +69,15 @@ export default [
       await sock.sendMessage(jid, { text: `📣 ${text || 'Admins, you are needed!'}\n${admins.map(tag).join(' ')}`, mentions: admins }, { quoted: msg })
     }
   },
-  adminCmd('antilink', 'Block group invite links', { usage: 'delete|kick|off' }, async ({ jid, args, reply }) => {
+  adminCmd('antilink', 'Block group invite links', { usage: 'delete|kick|off' }, async ({ jid, args, reply, session }) => {
     const m = (args[0] || '').toLowerCase()
     if (!['delete', 'kick', 'off'].includes(m)) return reply('Usage: .antilink delete | kick | off\n(I must be admin. Admins can still post links.)')
-    await setSetting(jid, 'antilink', m === 'off' ? null : m)
+    await session.store.set(jid, 'antilink', m === 'off' ? null : m)
     await reply(m === 'off' ? '✅ Antilink off.' : `✅ Antilink on: I will ${m} anyone who posts a group invite link.`)
   }),
-  adminCmd('welcome', 'Welcome/goodbye messages', { usage: 'on|off', needsBotAdmin: false }, async ({ jid, args, reply }) => {
+  adminCmd('welcome', 'Welcome/goodbye messages', { usage: 'on|off', needsBotAdmin: false }, async ({ jid, args, reply, session }) => {
     if (!args[0]) return reply('Usage: .welcome on | off')
-    await setSetting(jid, 'welcome', onOff(args[0]))
+    await session.store.set(jid, 'welcome', onOff(args[0]))
     await reply(onOff(args[0]) ? '✅ Welcome messages on.' : '✅ Welcome messages off.')
   }),
   {

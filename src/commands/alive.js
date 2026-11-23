@@ -1,4 +1,3 @@
-import { config } from '../config.js'
 import { formatUptime } from '../utils.js'
 
 export default {
@@ -6,7 +5,7 @@ export default {
   aliases: ['uptime', 'runtime'],
   category: 'General',
   description: 'Show bot status and uptime',
-  async run({ reply }) {
-    await reply(`⚓ *${config.botName}* is online.\n⏱ Uptime: ${formatUptime(process.uptime())}`)
+  async run({ reply, botName }) {
+    await reply(`⚓ *${botName}* is online.\n⏱ Uptime: ${formatUptime(process.uptime())}`)
   }
 }

@@ -1,7 +1,4 @@
-import { config } from './config.js'
 import { groupInfo } from './utils.js'
-import { getSetting } from './store.js'
-import { flags } from './globals.js'
 
 function unwrap(message = {}) {
   return (
@@ -29,12 +26,14 @@ function extractText(raw = {}) {
 const lastPresence = new Map()
 
 /** Autotyping / autorecording: show the chosen presence in the chat for a few seconds. */
-function showPresence(sock, jid) {
+function showPresence(sock, jid, session) {
+  const { flags } = session
   const state = flags.autorecording ? 'recording' : flags.autotyping ? 'composing' : null
   if (!state) return
+  const key = `${session.id}|${jid}`
   const now = Date.now()
-  if (now - (lastPresence.get(jid) ?? 0) < 3000) return
-  lastPresence.set(jid, now)
+  if (now - (lastPresence.get(key) ?? 0) < 3000) return
+  lastPresence.set(key, now)
   sock.sendPresenceUpdate(state, jid).catch(() => {})
   setTimeout(() => sock.sendPresenceUpdate('paused', jid).catch(() => {}), 4000)
 }
@@ -42,8 +41,8 @@ function showPresence(sock, jid) {
 const LINK_RE = /chat\.whatsapp\.com\/[A-Za-z0-9]{10,}/i
 
 /** Antilink: delete (or kick for) WhatsApp group invite links posted by non-admins. */
-async function antiLink(sock, msg, jid, sender) {
-  const mode = await getSetting(jid, 'antilink')
+async function antiLink(sock, msg, jid, sender, session) {
+  const mode = await session.store.get(jid, 'antilink')
   if (!mode) return
   const g = await groupInfo(sock, jid, sender)
   if (g.isAdmin || !g.isBotAdmin) return
@@ -55,32 +54,37 @@ async function antiLink(sock, msg, jid, sender) {
   })
 }
 
-export async function handleMessage(sock, msg, commands) {
+export async function handleMessage(sock, msg, commands, session) {
   if (!msg.message) return
   const jid = msg.key.remoteJid
   if (!jid) return
 
   if (jid === 'status@broadcast') {
-    if (flags.autoviewstatus && !msg.key.fromMe) sock.readMessages([msg.key]).catch(() => {})
+    if (session.flags.autoviewstatus && !msg.key.fromMe) sock.readMessages([msg.key]).catch(() => {})
     return
   }
-  if (!msg.key.fromMe) showPresence(sock, jid)
+  if (!msg.key.fromMe) showPresence(sock, jid, session)
 
   const text = extractText(msg.message).trim()
-  if (process.env.DEBUG) console.log(`[msg] from=${jid} fromMe=${!!msg.key.fromMe} text="${text.slice(0, 60)}"`)
-
-  if (jid.endsWith('@g.us') && !msg.key.fromMe && LINK_RE.test(text)) {
-    await antiLink(sock, msg, jid, msg.key.participant || jid).catch((e) => console.error('antilink:', e.message))
+  if (process.env.DEBUG) {
+    console.log(`[${session.id}] [msg] from=${jid} fromMe=${!!msg.key.fromMe} text="${text.slice(0, 60)}"`)
   }
 
-  if (!text.startsWith(config.prefix)) return
+  if (jid.endsWith('@g.us') && !msg.key.fromMe && LINK_RE.test(text)) {
+    await antiLink(sock, msg, jid, msg.key.participant || jid, session).catch((e) =>
+      console.error('antilink:', e.message)
+    )
+  }
+
+  const prefix = session.prefix
+  if (!text.startsWith(prefix)) return
 
   // Messages typed from the bot's own phone (fromMe) are allowed when they start with the prefix.
   // Bot replies never start with the prefix, so this cannot loop.
-  const [rawName, ...args] = text.slice(config.prefix.length).trim().split(/\s+/)
+  const [rawName, ...args] = text.slice(prefix.length).trim().split(/\s+/)
   const cmd = commands.get(rawName?.toLowerCase())
   if (!cmd) {
-    console.log(`[cmd] unknown command "${rawName}"`)
+    console.log(`[${session.id}] [cmd] unknown command "${rawName}"`)
     return
   }
 
@@ -94,8 +98,14 @@ export async function handleMessage(sock, msg, commands) {
     args,
     text: args.join(' '),
     commands,
+    session,
+    prefix,
+    botName: session.botName,
+    owners: session.owners,
+    flags: session.flags,
+    setFlag: (key, value) => session.setFlag(key, value),
     isGroup: jid.endsWith('@g.us'),
-    isOwner: !!msg.key.fromMe || config.owners.includes(senderNumber),
+    isOwner: !!msg.key.fromMe || session.isOwner(senderNumber),
     group: () => groupInfo(sock, jid, sender),
     reply: (content) =>
       sock.sendMessage(jid, typeof content === 'string' ? { text: content } : content, { quoted: msg })
@@ -113,10 +123,10 @@ export async function handleMessage(sock, msg, commands) {
   }
 
   try {
-    console.log(`[cmd] running ${cmd.name}`)
+    console.log(`[${session.id}] [cmd] running ${cmd.name}`)
     await cmd.run(ctx)
   } catch (err) {
-    console.error(`Command ${cmd.name} failed:`, err)
+    console.error(`[${session.id}] Command ${cmd.name} failed:`, err)
     await ctx.reply('⚠️ Something went wrong running that command.').catch(() => {})
   }
 }

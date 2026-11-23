@@ -13,15 +13,13 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false
-      - key: PAIR_NUMBER
+      - key: DASHBOARD_PASSWORD
         sync: false
       - key: OWNER_NUMBER
         sync: false
-      - key: PAIR_PASSWORD
-        sync: false
+      - key: MAX_SESSIONS
+        value: "4"
       - key: BOT_NAME
         value: Captain-XMD
       - key: PREFIX
         value: "."
-      - key: SESSION_ID
-        value: captain-xmd

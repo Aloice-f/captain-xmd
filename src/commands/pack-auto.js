@@ -1,5 +1,3 @@
-import { flags, setFlag } from '../globals.js'
-
 const parse = (v) => {
   const x = (v || '').toLowerCase()
   if (['on', 'true', 'yes', 'enable'].includes(x)) return true
@@ -10,7 +8,7 @@ const parse = (v) => {
 function toggle({ name, aliases = [], description, label, on, off, exclusiveWith, after }) {
   return {
     name, aliases, category: 'Auto', description, usage: 'on|off', ownerOnly: true,
-    async run({ sock, args, reply }) {
+    async run({ sock, args, reply, flags, setFlag }) {
       const value = parse(args[0])
       if (value === null) return reply(`${label} is currently *${flags[name] ? 'ON' : 'OFF'}*.\nUsage: .${name} on | off`)
       await setFlag(name, value)

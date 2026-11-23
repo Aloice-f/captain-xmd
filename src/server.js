@@ -2,7 +2,16 @@ import http from 'node:http'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { config } from './config.js'
-import { pairing, cleanNumber, requestCode, format, needsPassword } from './pairing.js'
+import { cleanNumber, format, needsPassword } from './pairing.js'
+import {
+  createSession,
+  deleteSession,
+  getSession,
+  listSessions,
+  pairSession,
+  sessionCounts,
+  unlinkSession
+} from './sessions.js'
 
 const PAGE = new URL('../public/index.html', import.meta.url)
 const SONGS = [['song.mp3', 'audio/mpeg'], ['song.wav', 'audio/wav']].map(([f, t]) => [new URL(`../public/${f}`, import.meta.url), t])
@@ -14,7 +23,9 @@ function sendSong(req, res) {
   const [url, type] = found
   const size = fs.statSync(url).size
   const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '')
-  let start = 0, end = size - 1, code = 200
+  let start = 0
+  let end = size - 1
+  let code = 200
   if (m) {
     start = m[1] ? Number(m[1]) : 0
     end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1
@@ -22,20 +33,23 @@ function sendSong(req, res) {
     code = 206
   }
   res.writeHead(code, {
-    'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1,
+    'Content-Type': type,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': end - start + 1,
     ...(code === 206 && { 'Content-Range': `bytes ${start}-${end}/${size}` })
   })
   fs.createReadStream(url, { start, end }).pipe(res)
 }
+
 const hits = new Map() // ip -> timestamps, for rate limiting
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest()
 
-function limited(ip) {
+function limited(ip, max = 8) {
   const now = Date.now()
   const recent = (hits.get(ip) ?? []).filter((t) => now - t < 10 * 60_000)
   recent.push(now)
   hits.set(ip, recent)
-  return recent.length > 6
+  return recent.length > max
 }
 
 function readJson(req) {
@@ -43,16 +57,32 @@ function readJson(req) {
     let body = ''
     req.on('data', (c) => {
       body += c
-      if (body.length > 2048) (reject(new Error('Request too large')), req.destroy())
+      if (body.length > 4096) {
+        reject(new Error('Request too large'))
+        req.destroy()
+      }
     })
     req.on('end', () => {
-      try { resolve(JSON.parse(body || '{}')) } catch { reject(new Error('Invalid request')) }
+      try {
+        resolve(JSON.parse(body || '{}'))
+      } catch {
+        reject(new Error('Invalid request'))
+      }
     })
   })
 }
 
-/** HTTP server: health check for Render + the pairing-code website. */
-export function startServer(getStatus) {
+/** The dashboard password. When none is configured the dashboard is open. */
+function authed(req) {
+  if (!needsPassword()) return true
+  const given = String(req.headers['x-dashboard-key'] ?? '')
+  return crypto.timingSafeEqual(sha(given), sha(config.dashboardPassword))
+}
+
+const SESSION_ROUTE = /^\/api\/sessions\/([a-z0-9]{6,32})\/(pair|unlink|delete)$/
+
+/** HTTP server: health check for Render + the multi-bot dashboard. */
+export function startServer() {
   const send = (res, code, data) => {
     res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     res.end(JSON.stringify(data))
@@ -62,7 +92,7 @@ export function startServer(getStatus) {
     const path = req.url.split('?')[0]
     const ip = (req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim()
 
-    if (path === '/health') return send(res, 200, { bot: config.botName, ...getStatus() })
+    if (path === '/health') return send(res, 200, { ok: true, bot: config.botName, ...sessionCounts() })
 
     if (req.method === 'GET' && (path === '/' || path === '/index.html')) {
       try {
@@ -75,44 +105,95 @@ export function startServer(getStatus) {
         })
         return res.end(fs.readFileSync(PAGE))
       } catch {
-        return send(res, 200, { bot: config.botName, ...getStatus() })
+        return send(res, 200, { bot: config.botName, ...sessionCounts() })
       }
     }
 
     if (req.method === 'GET' && path === '/song') return sendSong(req, res)
+    if (path === '/favicon.ico') return res.writeHead(204).end()
 
+    // Public: only totals, no phone numbers.
     if (req.method === 'GET' && path === '/api/status') {
       return send(res, 200, {
         botName: config.botName,
-        linked: pairing.linked,
-        gen: pairing.gen,
-        ready: pairing.ready,
         needsPassword: needsPassword(),
-        ...getStatus()
+        maxSessions: config.maxSessions,
+        ...sessionCounts()
       })
     }
 
-    if (req.method === 'POST' && path === '/api/pair') {
+    if (path.startsWith('/api/') && !authed(req)) {
+      return send(res, 401, { error: 'Wrong access key.' })
+    }
+
+    if (req.method === 'GET' && path === '/api/sessions') {
+      return send(res, 200, {
+        maxSessions: config.maxSessions,
+        sessions: listSessions().map((s) => s.getStatus())
+      })
+    }
+
+    if (req.method === 'POST' && path === '/api/sessions') {
       try {
         if (limited(ip)) return send(res, 429, { error: 'Too many attempts. Wait a few minutes and try again.' })
         const body = await readJson(req)
-        if (needsPassword() && !crypto.timingSafeEqual(sha(body.password ?? ''), sha(config.pairPassword))) {
-          return send(res, 401, { error: 'Wrong password.' })
-        }
         const { number, error } = cleanNumber(body.number)
         if (error) return send(res, 400, { error })
-        const { code, at, gen } = await requestCode(number)
-        return send(res, 200, { code: format(code), issuedAt: at, gen })
+        const session = await createSession({ number, label: body.label })
+        let code = null
+        let warning = null
+        try {
+          code = await pairSession(session.id, number)
+        } catch (e) {
+          warning = `Bot added, but WhatsApp did not give a code: ${e.message}`
+        }
+        return send(res, 200, {
+          session: session.getStatus(),
+          ...(code ? { code: format(code.code), issuedAt: code.at, gen: code.gen } : {}),
+          ...(warning ? { warning } : {})
+        })
       } catch (e) {
-        console.error('Pairing request failed:', e.message)
-        return send(res, 500, { error: e.message || 'Could not get a pairing code. Try again.' })
+        console.error('Create bot failed:', e.message)
+        return send(res, 400, { error: e.message })
+      }
+    }
+
+    const route = path.match(SESSION_ROUTE)
+    if (req.method === 'POST' && route) {
+      const [, id, action] = route
+      try {
+        if (limited(ip)) return send(res, 429, { error: 'Too many attempts. Wait a few minutes and try again.' })
+
+        if (action === 'pair') {
+          if (!getSession(id)) return send(res, 404, { error: 'Unknown bot. Refresh the page.' })
+          const body = await readJson(req)
+          const { number, error } = cleanNumber(body.number)
+          if (error) return send(res, 400, { error })
+          const code = await pairSession(id, number)
+          return send(res, 200, { session: getSession(id).getStatus(), code: format(code.code), issuedAt: code.at, gen: code.gen })
+        }
+
+        if (action === 'unlink') {
+          const session = await unlinkSession(id)
+          return send(res, 200, { ok: true, session })
+        }
+
+        if (action === 'delete') {
+          await deleteSession(id)
+          return send(res, 200, { ok: true })
+        }
+      } catch (e) {
+        console.error(`Session ${action} failed:`, e.message)
+        return send(res, 400, { error: e.message })
       }
     }
 
     res.writeHead(404).end()
   })
+
   console.log(SONGS.some(([u]) => fs.existsSync(u)) ? 'Theme song found in public/' : 'No theme song: add public/song.wav (or song.mp3)')
   server.listen(config.port, () => console.log(`HTTP server listening on :${config.port}`))
+  if (!needsPassword()) console.log('⚠️  No DASHBOARD_PASSWORD set: anyone with the URL can add or remove bots.')
 
   // Render free web services sleep after ~15 min without inbound traffic.
   // Self-pinging helps; an external pinger (UptimeRobot / cron-job.org) is more reliable.

@@ -1,5 +1,17 @@
 import { BufferJSON, initAuthCreds, proto } from '@whiskeysockets/baileys'
 
+/** Read one session's creds without opening a socket. Returns null when the bot is not linked yet. */
+export async function readCreds(supabase, sessionId, table = 'wa_sessions') {
+  const { data, error } = await supabase
+    .from(table)
+    .select('value')
+    .eq('session_id', sessionId)
+    .eq('key', 'creds')
+    .maybeSingle()
+  if (error) throw new Error(`Supabase read failed: ${error.message}`)
+  return data ? JSON.parse(data.value, BufferJSON.reviver) : null
+}
+
 /**
  * Baileys auth state backed by a Supabase table (see supabase/schema.sql).
  * Drop-in replacement for useMultiFileAuthState.

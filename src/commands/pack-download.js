@@ -7,36 +7,18 @@ const MAX_VIDEO_MB = 60
 const fmtDur = (s) =>
   `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-// Reusable downloader instance
-let ytInstance
-
-async function getYtdl() {
-  if (!ytInstance) {
-    const { Ytdl } = await import('@distube/ytdl-core')
-    ytInstance = new Ytdl()
-  }
-
-  return ytInstance
-}
-
 async function resolveVideo(query) {
   const yts = (await import('yt-search')).default
-  const match = query.match(YT_RE)
-
-  const result = match
-    ? await yts({ videoId: match[1] })
-    : (await yts(query)).videos?.[0]
-
-  if (!result) {
-    throw new Error('No search results found.')
-  }
+  const m = query.match(YT_RE)
+  const res = m ? await yts({ videoId: m[1] }) : (await yts(query)).videos[0]
+  if (!res) throw new Error('No results found.')
 
   return {
-    title: result.title,
-    url: result.url ?? `https://youtu.be/${match?.[1]}`,
-    seconds: result.seconds ?? result.duration?.seconds ?? 0,
-    author: result.author?.name ?? '',
-    thumb: result.thumbnail ?? result.image
+    title: res.title,
+    url: res.url ?? `https://youtu.be/${m[1]}`,
+    seconds: res.seconds ?? res.duration?.seconds ?? 0,
+    author: res.author?.name ?? '',
+    thumb: res.thumbnail ?? res.image
   }
 }
 
@@ -44,78 +26,126 @@ async function streamToBuffer(stream, maxMB) {
   const chunks = []
   let size = 0
 
-  for await (const chunk of stream) {
-    size += chunk.length
+  for await (const c of stream) {
+    size += c.length
 
-    if (size > maxMB * 1_000_000) {
-      stream.destroy?.()
-      throw new Error(`Download exceeded ${maxMB} MB size limit.`)
+    if (size > maxMB * 1e6) {
+      stream.destroy()
+      throw new Error(`File is bigger than ${maxMB}MB.`)
     }
 
-    chunks.push(chunk)
-  }
-
-  if (!size) {
-    throw new Error('The download returned an empty file.')
+    chunks.push(c)
   }
 
   return Buffer.concat(chunks)
 }
 
 async function ytBuffer(url, kind) {
-  const { Ytdl, Quality } = await import('@distube/ytdl-core')
-  const yt = await getYtdl()
+  const ytdl = (await import('@distube/ytdl-core')).default
+  const info = await ytdl.getInfo(url)
 
-  const info = await yt.getInfo(url)
-
-  const options = kind === 'audio'
-    ? {
-        quality: Quality.HighestAudio,
-        filter: {
-          hasAudio: true,
-          hasVideo: false
-        }
-      }
-    : {
-        quality: Quality.Highest,
-        filter: {
-          hasAudio: true,
-          hasVideo: true
-        }
-      }
-
-  const stream = yt.download(info, options)
+  const format =
+    kind === 'audio'
+      ? ytdl.chooseFormat(info.formats, {
+          quality: 'highestaudio',
+          filter: (f) =>
+            f.container === 'mp4' &&
+            f.hasAudio &&
+            !f.hasVideo
+        })
+      : ytdl.chooseFormat(info.formats, {
+          quality: 'highest',
+          filter: (f) =>
+            f.container === 'mp4' &&
+            f.hasAudio &&
+            f.hasVideo
+        })
 
   return streamToBuffer(
-    stream,
+    ytdl.downloadFromInfo(info, { format }),
     kind === 'audio' ? MAX_AUDIO_MB : MAX_VIDEO_MB
   )
 }
 
-function friendlyYtError(error) {
-  const raw = String(
-    error?.message || error || 'Unknown download error'
-  )
+// ==============================
+// JAMENDO MUSIC SOURCE
+// ==============================
 
-  if (
-    /confirm.*not.*bot|bot.?check|sign in to confirm|not a bot/i.test(raw)
-  ) {
-    return 'YouTube is asking for verification and is blocking this server. Try again later, or use a source that permits audio downloads.'
+async function jamendoSearch(query) {
+  const clientId = process.env.JAMENDO_CLIENT_ID
+
+  if (!clientId) {
+    throw new Error(
+      'Jamendo is not configured. Set JAMENDO_CLIENT_ID in Render environment variables.'
+    )
   }
 
-  if (/429|too many requests|rate.?limit/i.test(raw)) {
-    return 'YouTube rate-limited the server. Please wait before trying again.'
+  const api = new URL('https://api.jamendo.com/v3.0/tracks/')
+
+  api.searchParams.set('client_id', clientId)
+  api.searchParams.set('format', 'json')
+  api.searchParams.set('limit', '10')
+  api.searchParams.set('search', query)
+  api.searchParams.set('audioformat', 'mp32')
+  api.searchParams.set('audiodlformat', 'mp32')
+
+  const response = await fetch(api)
+
+  if (!response.ok) {
+    throw new Error(`Jamendo search failed (${response.status}).`)
   }
 
-  if (/403|forbidden/i.test(raw)) {
-    return 'YouTube denied this download request (403). This can be a server/IP restriction.'
+  const json = await response.json()
+
+  if (json?.headers?.status !== 'success') {
+    throw new Error(
+      json?.headers?.error_message || 'Jamendo search failed.'
+    )
   }
 
-  if (/timed out|timeout|etimedout/i.test(raw)) {
-    return 'The download timed out. Please try again later.'
+  return json.results || []
+}
+
+async function jamendoDownload(track) {
+  if (!track.audiodownload_allowed || !track.audiodownload) {
+    throw new Error(
+      'This Jamendo track is not permitted for download. Try another result.'
+    )
   }
 
-  return raw.slice(0, 400)
+  const response = await fetch(track.audiodownload, {
+    redirect: 'follow'
+  })
+
+  if (!response.ok) {
+    throw new Error(`Audio download failed (${response.status}).`)
+  }
+
+  const contentType = response.headers.get('content-type') || ''
+
+  if (!contentType.startsWith('audio/')) {
+    throw new Error('Provider did not return an audio file.')
+  }
+
+  const chunks = []
+  let total = 0
+  const maxBytes = MAX_AUDIO_MB * 1_000_000
+
+  for await (const chunk of response.body) {
+    total += chunk.length
+
+    if (total > maxBytes) {
+      throw new Error(`Audio exceeds ${MAX_AUDIO_MB} MB limit.`)
+    }
+
+    chunks.push(chunk)
+  }
+
+  if (!total) {
+    throw new Error('Downloaded audio is empty.')
+  }
+
+  return Buffer.concat(chunks)
 }
 
 function audioCmd(name, aliases = [], desc) {
@@ -124,46 +154,64 @@ function audioCmd(name, aliases = [], desc) {
     aliases,
     category: 'Download',
     description: desc,
-    usage: '<song name or YouTube link>',
+    usage: '<song name>',
 
     async run({ sock, jid, msg, text, reply }) {
       if (!text) {
-        return reply(`Usage: .${name} Burna Boy Last Last`)
+        return reply(`Usage: .${name} artist song title`)
       }
 
       try {
-        const video = await resolveVideo(text)
+        const results = await jamendoSearch(text)
 
-        if (video.seconds > 20 * 60) {
-          return reply('❌ That is longer than 20 minutes.')
+        const track = results.find(
+          (item) =>
+            item.audiodownload_allowed &&
+            item.audiodownload
+        )
+
+        if (!track) {
+          return reply(
+            '❌ No downloadable track found on Jamendo for that search. Try another query.'
+          )
         }
+
+        const seconds = Number(track.duration || 0)
+
+        if (seconds > 20 * 60) {
+          return reply('❌ That track is longer than 20 minutes.')
+        }
+
+        const title = `${track.name} — ${track.artist_name}`
 
         await sendBanner(
           sock,
           jid,
-          `🎵 *${video.title}*\n${video.author} • ${fmtDur(video.seconds)}\n\n_Downloading..._`,
+          `🎵 *${title}*\n${fmtDur(seconds)} • Jamendo\n\n_Downloading permitted track..._`,
           { quoted: msg }
         ).catch(() => {})
 
-        const audio = await ytBuffer(video.url, 'audio')
+        const audio = await jamendoDownload(track)
 
         await sock.sendMessage(
           jid,
           {
             audio,
-            mimetype: 'audio/webm',
-            fileName: `${video.title}.webm`
+            mimetype: 'audio/mpeg',
+            fileName: `${track.name}.mp3`
           },
           { quoted: msg }
         )
-      } catch (error) {
-        await reply(
-          `❌ ${friendlyYtError(error)}\n\nYouTube downloads may be unavailable from cloud hosting when YouTube blocks the server.`
-        )
+      } catch (e) {
+        await reply(`❌ ${e.message}`)
       }
     }
   }
 }
+
+// ==============================
+// YOUTUBE VIDEO DOWNLOADER
+// ==============================
 
 function videoCmd(name, aliases = [], desc) {
   return {
@@ -179,23 +227,23 @@ function videoCmd(name, aliases = [], desc) {
       }
 
       try {
-        const videoInfo = await resolveVideo(text)
+        const v = await resolveVideo(text)
 
-        if (videoInfo.seconds > 10 * 60) {
+        if (v.seconds > 10 * 60) {
           return reply('❌ That is longer than 10 minutes.')
         }
 
-        await reply(`🎬 *${videoInfo.title}*\n_Downloading..._`)
+        await reply(`🎬 *${v.title}*\n_Downloading..._`)
 
-        const video = await ytBuffer(videoInfo.url, 'video')
+        const video = await ytBuffer(v.url, 'video')
 
-        if (video.length > 16_000_000) {
+        if (video.length > 16e6) {
           await sock.sendMessage(
             jid,
             {
               document: video,
               mimetype: 'video/mp4',
-              fileName: `${videoInfo.title}.mp4`
+              fileName: `${v.title}.mp4`
             },
             { quoted: msg }
           )
@@ -204,36 +252,45 @@ function videoCmd(name, aliases = [], desc) {
             jid,
             {
               video,
-              caption: videoInfo.title,
+              caption: v.title,
               mimetype: 'video/mp4'
             },
             { quoted: msg }
           )
         }
-      } catch (error) {
+      } catch (e) {
         await reply(
-          `❌ ${friendlyYtError(error)}\n\nYouTube downloads may be unavailable from cloud hosting when YouTube blocks the server.`
+          `❌ ${e.message}\n\nYouTube may be blocking downloads from this server.`
         )
       }
     }
   }
 }
 
+// ==============================
+// TIKTOK
+// ==============================
+
 async function tikwm(url) {
-  const json = await getJson(
+  const j = await getJson(
     `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`
   )
 
-  if (json.code !== 0 || !json.data) {
-    throw new Error(json.msg || 'Could not read that TikTok link.')
+  if (j.code !== 0 || !j.data) {
+    throw new Error(j.msg || 'Could not read that TikTok link.')
   }
 
-  return json.data
+  return j.data
 }
 
+// ==============================
+// EXPORT COMMANDS
+// ==============================
+
 export default [
-  audioCmd('play', ['song'], 'Download a song as audio'),
-  audioCmd('ytmp3', [], 'YouTube link/name to audio'),
+  audioCmd('play', ['song'], 'Download music from Jamendo'),
+  audioCmd('ytmp3', [], 'Search and download music from Jamendo'),
+
   videoCmd('video', [], 'Download a YouTube video'),
   videoCmd('ytmp4', [], 'YouTube link/name to video'),
 
@@ -265,8 +322,8 @@ export default [
             )
             .join('\n\n')
         )
-      } catch (error) {
-        await reply(`❌ ${friendlyYtError(error)}`)
+      } catch (e) {
+        await reply(`❌ ${e.message}`)
       }
     }
   },
@@ -284,18 +341,18 @@ export default [
       }
 
       try {
-        const data = await tikwm(args[0])
+        const d = await tikwm(args[0])
 
         await sock.sendMessage(
           jid,
           {
-            video: { url: data.play },
-            caption: data.title || 'TikTok'
+            video: { url: d.play },
+            caption: d.title || 'TikTok'
           },
           { quoted: msg }
         )
-      } catch (error) {
-        await reply(`❌ ${error.message}`)
+      } catch (e) {
+        await reply(`❌ ${e.message}`)
       }
     }
   },
@@ -313,18 +370,18 @@ export default [
       }
 
       try {
-        const data = await tikwm(args[0])
+        const d = await tikwm(args[0])
 
         await sock.sendMessage(
           jid,
           {
-            audio: { url: data.music },
+            audio: { url: d.music },
             mimetype: 'audio/mpeg'
           },
           { quoted: msg }
         )
-      } catch (error) {
-        await reply(`❌ ${error.message}`)
+      } catch (e) {
+        await reply(`❌ ${e.message}`)
       }
     }
   },
@@ -346,8 +403,9 @@ export default [
 
         const { buffer, type, url } = await getBuffer(args[0], 50)
 
-        const fileName =
-          decodeURIComponent(url.pathname.split('/').pop() || 'file') || 'file'
+        const name =
+          decodeURIComponent(url.pathname.split('/').pop() || 'file') ||
+          'file'
 
         if (type.startsWith('image/')) {
           await sock.sendMessage(
@@ -357,7 +415,7 @@ export default [
           )
         } else if (
           type.startsWith('video/') &&
-          buffer.length < 16_000_000
+          buffer.length < 16e6
         ) {
           await sock.sendMessage(
             jid,
@@ -376,13 +434,13 @@ export default [
             {
               document: buffer,
               mimetype: type || 'application/octet-stream',
-              fileName
+              fileName: name
             },
             { quoted: msg }
           )
         }
-      } catch (error) {
-        await reply(`❌ ${error.message}`)
+      } catch (e) {
+        await reply(`❌ ${e.message}`)
       }
     }
   }

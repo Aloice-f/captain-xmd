@@ -83,7 +83,7 @@ Welcome to the **Captain Lab** — a cyber-themed command environment built for 
 
 [![Captain Lab](https://img.shields.io/badge/ENTER_CAPTAIN_LAB-LIVE-00FF41?style=for-the-badge&logo=googlechrome&logoColor=black)](https://captain-bot-xmd-8.onrender.com/)
 
-**🌐 Website:** https://captain-bot-xmd-8.onrender.com/
+**🌐 Website:**
 
 </div>
 

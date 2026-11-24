@@ -4,7 +4,7 @@
 
 <br/>
 
-<img src="public/menu.jpg" width="100%" alt="Captain-XMD Cyber Lab Banner"/>
+<img src="public/menu" width="100%" alt="Captain-XMD Cyber Lab Banner"/>
 
 <br/>
 

@@ -1,6 +1,6 @@
 {
   "name": "captain-xmd",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Captain-XMD multi-bot WhatsApp platform (Baileys) with Supabase sessions and a pairing dashboard, ready for Render",
   "type": "module",
   "main": "src/index.js",
@@ -8,10 +8,10 @@
     "start": "node src/index.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.22.2 <23"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.14.4",
+    "@distube/ytdl-core": "^5.2.1",
     "@supabase/supabase-js": "^2.45.0",
     "@whiskeysockets/baileys": "^6.7.18",
     "dotenv": "^16.4.5",

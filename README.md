@@ -1,4 +1,3 @@
-
 <div align="center">
 
 <img src="https://readme-typing-svg.herokuapp.com?font=Orbitron&weight=700&size=35&duration=2500&pause=700&color=00FF41&center=true&vCenter=true&width=800&lines=CAPTAIN-XMD;WELCOME+TO+CAPTAIN+LAB;SYSTEM+ONLINE;ACCESS+GRANTED" alt="Captain XMD Terminal" />

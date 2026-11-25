@@ -329,7 +329,17 @@ async function api(path,opts={}){
   return data
 }
 function paintStatus(st){
-  if(st){maxSessions=st.maxSessions??maxSessions;const online=st.connected??0;const total=st.total??sessions.length;$('st').classList.toggle('on',online>0);$('stText').textContent=total?`${online}/${total} ONLINE`:'NO BOTS YET'}else{$('st').classList.remove('on');$('stText').textContent='LAB OFFLINE'}}
+  if(st){
+    const capacity=Number(st.maxSessions);
+    if(Number.isFinite(capacity)&&capacity>=0)maxSessions=capacity;
+    const online=Math.max(0,Number(st.connected)||0);
+    $('st').classList.toggle('on',online>0);
+    $('stText').textContent=`${online}/${maxSessions} ONLINE`;
+  }else{
+    $('st').classList.remove('on');
+    $('stText').textContent='LAB OFFLINE';
+  }
+}
 async function refreshPublic(){try{paintStatus(await(await fetch('/api/status')).json())}catch{paintStatus(null)}}
 
 /* ---------- bots ---------- */
@@ -351,7 +361,9 @@ function card(s){
 function render(){
   const onlineSessions=sessions.filter(s=>s.connection==='open')
   const online=onlineSessions.length
-  $('summary').textContent=`${online} device${online===1?'':'s'} online`
+  $('summary').textContent=`${online}/${maxSessions} devices online`
+  $('st').classList.toggle('on',online>0)
+  $('stText').textContent=`${online}/${maxSessions} ONLINE`
   $('list').innerHTML=online?onlineSessions.map(card).join(''):'<div class="empty">No devices are currently online.</div>'
   $('addToggle').disabled=sessions.length>=maxSessions
   // telemetry card numbers

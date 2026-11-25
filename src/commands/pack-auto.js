@@ -25,11 +25,11 @@ function toggle({ name, aliases = [], description, label, on, off, exclusiveWith
 
 export default [
   toggle({
-    name: 'autotyping', description: 'Show "typing..." when messages arrive', label: 'Auto typing',
+    name: 'autotyping', aliases: ['autotype'], description: 'Show "typing..." when messages arrive', label: 'Auto typing',
     on: '⌨️ Auto typing is *ON*.', off: '⌨️ Auto typing is *OFF*.', exclusiveWith: 'autorecording'
   }),
   toggle({
-    name: 'autorecording', description: 'Show "recording audio..." when messages arrive', label: 'Auto recording',
+    name: 'autorecording', aliases: ['autorecord'], description: 'Show "recording audio..." when messages arrive', label: 'Auto recording',
     on: '🎙 Auto recording is *ON*.', off: '🎙 Auto recording is *OFF*.', exclusiveWith: 'autotyping'
   }),
   toggle({

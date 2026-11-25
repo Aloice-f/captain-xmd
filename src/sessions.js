@@ -8,6 +8,19 @@ const sessions = new Map()
 let allCommands = null
 
 export const getSession = (id) => sessions.get(id)
+
+/** Forget a bot completely: socket, credentials, per-bot settings and its dashboard entry. */
+export async function removeSession(id) {
+  const session = sessions.get(id)
+  session?.stop()
+  sessions.delete(id)
+  const results = await Promise.all([
+    supabase.from('wa_sessions').delete().eq('session_id', id),
+    supabase.from('chat_settings').delete().like('chat_id', `session:${id}:%`),
+    supabase.from('bot_sessions').delete().eq('id', id)
+  ])
+  for (const { error } of results) if (error) console.error(`[${id}] cleanup:`, error.message)
+}
 export const listSessions = () => [...sessions.values()]
 export const sessionCounts = () => {
   const all = listSessions()
@@ -56,21 +69,38 @@ export async function loadSessions(commands) {
     rows = [{ ...row, created_at: new Date().toISOString() }]
   }
 
+  const toStart = []
   for (const row of rows) {
     const session = new BotSession(row)
     session.commands = allCommands
+    session.onPurge = removeSession
     sessions.set(session.id, session)
 
     if (await session.hasCreds()) {
-      session.start().catch((e) => console.error(`[${session.id}] start failed:`, e.message))
+      toStart.push(() => session.start())
     } else if (session.id === config.legacySessionId && config.pairNumber) {
       // Preserve the old "pair from PAIR_NUMBER at boot" behaviour for the migrated bot.
-      session
-        .start()
-        .then(() => session.requestCode(config.pairNumber))
-        .catch((e) => console.error(`[${session.id}] pairing failed:`, e.message))
+      toStart.push(() => session.start().then(() => session.requestCode(config.pairNumber)))
+    } else {
+      continue
     }
+    const last = toStart.length - 1
+    const run = toStart[last]
+    toStart[last] = () =>
+      run().catch((e) => console.error(`[${session.id}] start failed:`, e.message))
   }
+
+  // Reconnect in the background, a few at a time, so the server (and the dashboard)
+  // is up immediately and 100 bots don't all connect in the same second.
+  ;(async () => {
+    for (let i = 0; i < toStart.length; i += config.startBatchSize) {
+      await Promise.all(toStart.slice(i, i + config.startBatchSize).map((fn) => fn()))
+      if (i + config.startBatchSize < toStart.length) {
+        await new Promise((r) => setTimeout(r, config.startBatchDelayMs))
+      }
+    }
+    if (toStart.length) console.log(`All ${toStart.length} linked bot(s) started, ${sessionCounts().connected} connected`)
+  })()
 
   console.log(`${rows.length} bot(s) loaded, ${sessionCounts().connected} connected`)
 }
@@ -95,6 +125,7 @@ export async function createSession({ number, label }) {
 
   const session = new BotSession({ ...row, created_at: new Date().toISOString() })
   session.commands = allCommands
+  session.onPurge = removeSession
   sessions.set(id, session)
   await session.start()
   return session
@@ -111,14 +142,14 @@ export async function unlinkSession(id) {
   const session = sessions.get(id)
   if (!session) throw new Error('Unknown bot. Refresh the page.')
   await session.unlink()
-  return session.getStatus()
+  const status = session.getStatus()
+  await removeSession(id) // a logged-out number is not kept on the website
+  return status
 }
 
 export async function deleteSession(id) {
   const session = sessions.get(id)
   if (!session) throw new Error('Unknown bot. Refresh the page.')
   await session.destroy()
-  sessions.delete(id)
-  const { error } = await supabase.from('bot_sessions').delete().eq('id', id)
-  if (error) throw new Error(`Could not remove the bot: ${error.message}`)
+  await removeSession(id)
 }

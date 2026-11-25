@@ -223,3 +223,45 @@ WELCOME TO THE LAB.
 **© CAPTAIN-XMD | ALL SYSTEMS OPERATIONAL**
 
 </div>
+<<<<<<< HEAD
+=======
+
+
+---
+
+## Status commands (owner only)
+
+| Command | What it does |
+| --- | --- |
+| `.autoviewstatus on/off` | automatically views contacts' statuses |
+| `.autolikestatus on/off` | automatically reacts to statuses |
+| `.setstatusemoji 💚` | emoji used for those reactions (`reset` = random) |
+| `.statusdl` / `.save` (reply to a status) | downloads that status image, video, voice note or text |
+| `.getstatus @user` | sends that contact's statuses seen in the last 24h, plus their About |
+| `.statuslist` | contacts who posted in the last 24h |
+| `.setstatus <text>` | posts a text status |
+| `.poststatus [caption]` (reply to media) | posts it as your status |
+| `.setbio <text>` | changes the About text |
+| `.antidelete on/off` | also saves deleted **statuses** (and deleted messages) to the bot's own chat |
+| `.statusreply <message>` / `off` | auto-replies to contacts' statuses (max once per contact per 6h) |
+| `.blockstatus` / `.allowstatus` | choose who sees the statuses posted *by the bot* |
+| `.settings` | shows every setting at a glance |
+| `.logout confirm` | goodbye message, logs out, removes the bot's data |
+
+Notes: WhatsApp only delivers statuses while the bot is connected, so `.getstatus` / `.statuslist` cover what arrived since then.
+Bot-posted statuses go to the contacts the bot has learned (people who message you or post a status).
+
+## Logging out
+
+* `.logout confirm` or the dashboard unlink: the bot sends a goodbye message (to the owner and the bot's own chat), logs out, and deletes
+  its credentials, settings and dashboard entry.
+* Logging out from the phone (Linked devices): WhatsApp closes the connection first, so the goodbye cannot be sent from that number.
+  Set `GOODBYE_VIA_OTHER_BOT=1` to have another connected bot send it. The bot is removed from the dashboard either way.
+* Linking again later creates a fresh bot entry and sends the "connected" message again.
+
+## Auto-join
+
+The first time a number is linked, it joins the support group and follows the channel set in `AUTO_JOIN_GROUPS` /
+`AUTO_JOIN_CHANNELS` (built-in defaults; `none` turns it off). The bot tells the user what it joined. It runs once per link,
+never on reconnects or restarts, and runs again only if the user logs out and links again.
+>>>>>>> 1358f1f (Add status commands, logout cleanup and auto-join)

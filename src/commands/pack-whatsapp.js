@@ -14,16 +14,16 @@ export default [
     const res = await sock.groupParticipantsUpdate(jid, [toJid(args[0])], 'add')
     await reply(res?.[0]?.status === '200' ? '✅ Added.' : `⚠️ Could not add (status ${res?.[0]?.status ?? 'unknown'}). They may have privacy settings on.`)
   }),
-  adminCmd('revoke', 'Reset the group invite link', {}, async ({ sock, jid, reply }) => {
+  adminCmd('revoke', 'Reset the group invite link', { aliases: ['resetlink'] }, async ({ sock, jid, reply }) => {
     await sock.groupRevokeInvite(jid)
     await reply('✅ Old link is now invalid. Use .link for the new one.')
   }),
-  adminCmd('setname', 'Change group name', { usage: '<name>' }, async ({ sock, jid, text, reply }) => {
+  adminCmd('setname', 'Change group name', { aliases: ['gname'], usage: '<name>' }, async ({ sock, jid, text, reply }) => {
     if (!text) return reply('Usage: .setname New Name')
     await sock.groupUpdateSubject(jid, text.slice(0, 100))
     await reply('✅ Name updated.')
   }),
-  adminCmd('setdesc', 'Change group description', { usage: '<text>' }, async ({ sock, jid, text, reply }) => {
+  adminCmd('setdesc', 'Change group description', { aliases: ['gdesc'], usage: '<text>' }, async ({ sock, jid, text, reply }) => {
     if (!text) return reply('Usage: .setdesc Welcome to our group')
     await sock.groupUpdateDescription(jid, text)
     await reply('✅ Description updated.')
@@ -40,13 +40,13 @@ export default [
   adminCmd('unlock', 'Everyone can edit group info', {}, async ({ sock, jid, reply }) => {
     await sock.groupSettingUpdate(jid, 'unlocked'); await reply('🔓 Everyone can edit group info now.')
   }),
-  adminCmd('setpp', 'Set group picture (reply to an image)', {}, async ({ sock, jid, msg, reply }) => {
+  adminCmd('setpp', 'Set group picture (reply to an image)', { aliases: ['gdp'] }, async ({ sock, jid, msg, reply }) => {
     const media = await getMedia(sock, msg, ['imageMessage'])
     if (!media) return reply('Reply to an image with .setpp')
     await sock.updateProfilePicture(jid, media.buffer)
     await reply('✅ Group picture updated.')
   }),
-  adminCmd('disappear', 'Disappearing messages', { aliases: ['ephemeral'], usage: 'off|24h|7d|90d', needsBotAdmin: false }, async ({ sock, jid, args, reply }) => {
+  adminCmd('disappear', 'Disappearing messages', { aliases: ['ephemeral', 'disappearing'], usage: 'off|24h|7d|90d', needsBotAdmin: false }, async ({ sock, jid, args, reply }) => {
     const map = { off: 0, '24h': 86400, '7d': 604800, '90d': 7776000 }
     const v = map[(args[0] || '').toLowerCase()]
     if (v === undefined) return reply('Usage: .disappear off | 24h | 7d | 90d')
@@ -142,7 +142,7 @@ export default [
     }
   },
   {
-    name: 'listgroups', aliases: ['groups'], category: 'Owner', description: 'List groups the bot is in', ownerOnly: true,
+    name: 'listgroups', aliases: ['groups', 'gclist'], category: 'Owner', description: 'List groups the bot is in', ownerOnly: true,
     async run({ sock, reply }) {
       const g = Object.values(await sock.groupFetchAllParticipating())
       await reply(g.length ? g.map((x, i) => `${i + 1}. ${x.subject} (${x.participants.length})`).join('\n').slice(0, 3500) : 'Not in any groups.')

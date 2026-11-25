@@ -12,6 +12,8 @@ import { useSupabaseAuthState, readCreds } from './supabaseAuthState.js'
 import { scopedStore, updateSessionRow } from './store.js'
 import { handleMessage } from './handler.js'
 import { sendBanner } from './utils.js'
+import { noteContact } from './statuses.js'
+import { autoJoin } from './autojoin.js'
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'silent' })
 
@@ -43,6 +45,31 @@ export class BotSession {
     this.commands = null
     this.store = scopedStore(`session:${row.id}`)
     this.flags = Object.fromEntries(FLAG_KEYS.map((k) => [k, false]))
+    // Per-bot settings that can be changed from WhatsApp (.mode, .setprefix, .addsudo ...).
+    // Loaded once at start so the message handler never waits on the database.
+    this.cfg = {
+      mode: 'public', // public | private (private = owners/sudo only)
+      prefix: '',
+      botName: '',
+      ownerName: '',
+      sudo: [],
+      bannedGroups: [],
+      reacts: [],
+      antidelete: false,
+      antionce: false,
+      autolike: false,
+      autoread: false,
+      creact: false,
+      anticall: false,
+      statusEmoji: '',
+      statusReply: '',
+      statusReplyOn: false,
+      statusBlocked: []
+    }
+    this.msgCache = new Map() // antidelete: recent messages (only filled while antidelete is on)
+    this.statuses = [] // statuses seen in the last 24h (.statuslist, .getstatus, status antidelete)
+    this.contacts = new Set() // numbers we can show bot-posted statuses to
+    this.onPurge = null // set by sessions.js: removes this bot and all its data after a logout
 
     this.status = 'offline' // offline | connecting | open | reconnecting | replaced | unpaired
     this.lastError = ''
@@ -64,11 +91,15 @@ export class BotSession {
   }
 
   get prefix() {
-    return config.prefix
+    return this.cfg.prefix || config.prefix
   }
 
   get botName() {
-    return config.botName
+    return this.cfg.botName || config.botName
+  }
+
+  get ownerName() {
+    return this.cfg.ownerName || 'captain'
   }
 
   /** The bot's own number + the number its owner used + deployment admins. */
@@ -76,8 +107,15 @@ export class BotSession {
     return [...new Set([this.ownerNumber, this.linkedNumber, ...config.owners].filter(Boolean))]
   }
 
-  isOwner(numberOrJid) {
+  /** True owners only (not sudo users). */
+  isRealOwner(numberOrJid) {
     return this.owners.includes(num(numberOrJid))
+  }
+
+  /** Owners and sudo users: allowed to run owner commands. */
+  isOwner(numberOrJid) {
+    const n = num(numberOrJid)
+    return this.owners.includes(n) || this.cfg.sudo.includes(n)
   }
 
   getStatus() {
@@ -132,6 +170,7 @@ export class BotSession {
     }
 
     await this.loadFlags()
+    await this.loadConfig()
 
     this.status = 'connecting'
     this.lastError = ''
@@ -175,7 +214,10 @@ export class BotSession {
     sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
       try {
         if (action !== 'add' && action !== 'remove') return
-        if (!(await this.store.get(id, 'welcome'))) return
+        const welcome = await this.store.get(id, 'welcome')
+        // .goodbye has its own switch; if it was never set, goodbye follows welcome (old behaviour)
+        const goodbye = await this.store.get(id, 'goodbye', welcome)
+        if (!(action === 'add' ? welcome : goodbye)) return
         const jids = participants.map((p) => (typeof p === 'string' ? p : p.id))
         const names = jids.map((j) => `@${num(j)}`).join(' ')
         const text =
@@ -185,6 +227,23 @@ export class BotSession {
         await sock.sendMessage(id, { text, mentions: jids })
       } catch (e) {
         console.error(`[${this.id}] welcome failed:`, e.message)
+      }
+    })
+
+    const learn = (list = []) => list.forEach((c) => noteContact(this, c?.id))
+    sock.ev.on('contacts.upsert', learn)
+    sock.ev.on('contacts.update', learn)
+
+    sock.ev.on('call', async (calls) => {
+      if (!this.cfg.anticall) return
+      for (const call of calls) {
+        if (call.status !== 'offer') continue
+        try {
+          await sock.rejectCall(call.id, call.from)
+          await sock.sendMessage(call.from, { text: '📵 Calls are not allowed here. Please send a message instead.' })
+        } catch (e) {
+          console.error(`[${this.id}] anticall:`, e.message)
+        }
       }
     })
 
@@ -213,7 +272,10 @@ export class BotSession {
     this.startPresence(sock)
     if (!this.announced) {
       this.announced = true
-      this.announce(sock).catch((e) => console.error(`[${this.id}] connected message:`, e.message))
+      this.announce(sock)
+        .catch((e) => console.error(`[${this.id}] connected message:`, e.message))
+        .then(() => autoJoin(sock, this))
+        .catch((e) => console.error(`[${this.id}] auto-join:`, e.message))
     }
   }
 
@@ -229,13 +291,7 @@ export class BotSession {
     this.lastError = err?.message || (code ? `code ${code}` : '')
 
     if (code === DisconnectReason.loggedOut) {
-      console.log(`[${this.id}] logged out of WhatsApp; clearing its session`)
-      this.pairing.linked = false
-      this.linkedNumber = ''
-      this.status = 'unpaired'
-      this.clearIdleTimer()
-      clearSession().catch((e) => console.error(`[${this.id}] clear:`, e.message))
-      updateSessionRow(this.id, { linked_number: null }).catch(() => {})
+      this.handleLoggedOut(clearSession).catch((e) => console.error(`[${this.id}] logout cleanup:`, e.message))
       return
     }
 
@@ -295,8 +351,14 @@ export class BotSession {
     this.linkedNumber = ''
     this.creds = null
     this.sock = null
+    this.announced = false
 
     if (sock && wasLinked) {
+      try {
+        await this.farewell(sock)
+      } catch {
+        /* the goodbye is best effort */
+      }
       try {
         await sock.logout()
       } catch (e) {
@@ -312,6 +374,78 @@ export class BotSession {
       await this.clearSession().catch((e) => console.error(`[${this.id}] clear:`, e.message))
     }
     await updateSessionRow(this.id, { linked_number: null }).catch(() => {})
+  }
+
+  // ------------------------------------------------------------------ logout
+  /** Goodbye text sent when the account is logged out from this bot. */
+  goodbyeText() {
+    return (
+      `👋 *${this.botName} disconnected*\n\n` +
+      `Bot : ${this.label}\n` +
+      `Your WhatsApp account has been logged out from this bot.\n` +
+      `Your session and settings were removed from the server, and the website no longer lists this number.\n\n` +
+      `Whenever you want the bot back, just link your number again on the website. Goodbye! 👋`
+    )
+  }
+
+  /** Send the goodbye message to the owner(s) and the bot's own chat while the socket is still alive. */
+  async farewell(sock = this.sock) {
+    if (!sock?.user?.id) return
+    const targets = new Set(this.owners.map((n) => `${n}@s.whatsapp.net`))
+    targets.add(jidNormalizedUser(sock.user.id))
+    const send = async () => {
+      for (const jid of targets) {
+        await sendBanner(sock, jid, this.goodbyeText(), {}, this).catch(() => {})
+      }
+    }
+    // never let a slow send block the logout for more than a few seconds
+    await Promise.race([send(), new Promise((r) => setTimeout(r, 6000))])
+  }
+
+  /**
+   * The user logged out from the phone (Linked devices -> Log out). WhatsApp has already
+   * closed this account's connection, so the goodbye cannot come from this number any more.
+   * Wipe everything and drop the bot from the dashboard so the number is not listed (or offered
+   * for re-linking) until the person decides to link again.
+   */
+  async handleLoggedOut(clearSession) {
+    const wasLinked = this.pairing.linked || !!this.creds?.registered || !!this.state?.creds?.registered
+    const owner = this.ownerNumber || this.linkedNumber
+    console.log(`[${this.id}] logged out of WhatsApp; removing its session and data`)
+
+    this.stopped = true
+    this.announced = false
+    this.pairing.linked = false
+    this.pairing.ready = false
+    this.pairing.last = null
+    this.linkedNumber = ''
+    this.status = 'unpaired'
+    this.clearTimers()
+    this.sock = null
+
+    await clearSession().catch((e) => console.error(`[${this.id}] clear:`, e.message))
+
+    if (wasLinked && config.goodbyeViaOtherBot && owner) {
+      await this.goodbyeFromAnotherBot(owner).catch((e) => console.error(`[${this.id}] goodbye fallback:`, e.message))
+    }
+
+    // a pairing attempt that never finished keeps its dashboard entry; a real logout removes it
+    if (wasLinked && this.onPurge) await this.onPurge(this.id)
+    else await updateSessionRow(this.id, { linked_number: null }).catch(() => {})
+  }
+
+  /** Optional (GOODBYE_VIA_OTHER_BOT=1): another connected bot of this deployment tells the owner goodbye. */
+  async goodbyeFromAnotherBot(ownerNumber) {
+    const { listSessions } = await import('./sessions.js')
+    const helper = listSessions().find((s) => s !== this && s.status === 'open' && s.sock?.user?.id)
+    if (!helper) return
+    await helper.sock.sendMessage(`${ownerNumber}@s.whatsapp.net`, { text: this.goodbyeText() })
+  }
+
+  /** `.logout confirm`: say goodbye, log the account out and forget everything about it. */
+  async logoutAndForget() {
+    await this.unlink() // sends the goodbye, logs the device out, clears credentials
+    if (this.onPurge) await this.onPurge(this.id)
   }
 
   // ------------------------------------------------------------------ pairing
@@ -373,6 +507,19 @@ export class BotSession {
     for (const key of FLAG_KEYS) {
       this.flags[key] = !!(await this.store.get('global', key, false))
     }
+  }
+
+  async loadConfig() {
+    const saved = await this.store.get('global', 'config', null).catch(() => null)
+    if (saved && typeof saved === 'object') Object.assign(this.cfg, saved)
+    const contacts = await this.store.get('global', 'contacts', []).catch(() => [])
+    if (Array.isArray(contacts)) contacts.forEach((n) => this.contacts.add(String(n)))
+  }
+
+  /** Change one or more per-bot settings and save them. */
+  async setCfg(patch) {
+    Object.assign(this.cfg, patch)
+    await this.store.set('global', 'config', this.cfg)
   }
 
   async setFlag(key, value) {
@@ -438,7 +585,7 @@ export class BotSession {
       `Prefix : ${this.prefix}\nCommands : ${new Set(this.commands.values()).size}\nTime : ${when}\n\n` +
       `Type *${this.prefix}menu* to see everything I can do.`
     for (const jid of targets) {
-      await sendBanner(sock, jid, text).catch(() => {})
+      await sendBanner(sock, jid, text, {}, this).catch(() => {})
       await new Promise((r) => setTimeout(r, 1000))
     }
   }

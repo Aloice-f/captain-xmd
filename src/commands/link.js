@@ -1,6 +1,6 @@
 export default {
   name: 'link',
-  aliases: ['invite'],
+  aliases: ['invite', 'glink'],
   category: 'Group',
   description: 'Get the group invite link',
   adminOnly: true,

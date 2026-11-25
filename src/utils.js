@@ -17,15 +17,23 @@ export function formatUptime(s) {
 }
 
 /** Banner image for the menu / connected message. MENU_IMAGE_URL overrides the bundled assets/menu.jpg */
-export async function menuImage() {
+export async function menuImage(session) {
+  // an image chosen with .setbotimage wins over the deployment default
+  try {
+    const saved = await session?.store.get('global', 'botimage', null)
+    if (saved?.b64) return Buffer.from(saved.b64, 'base64')
+    if (saved?.url) return { url: saved.url }
+  } catch {
+    /* fall back to the default image */
+  }
   if (config.menuImageUrl) return { url: config.menuImageUrl }
   return await readFile(path.join(root, 'assets', 'menu.jpg'))
 }
 
 /** Send the banner with a caption; falls back to plain text if the image cannot be sent. */
-export async function sendBanner(sock, jid, caption, options = {}) {
+export async function sendBanner(sock, jid, caption, options = {}, session) {
   try {
-    return await sock.sendMessage(jid, { image: await menuImage(), caption }, options)
+    return await sock.sendMessage(jid, { image: await menuImage(session), caption }, options)
   } catch (err) {
     console.error('Banner send failed, sending text only:', err.message)
     return await sock.sendMessage(jid, { text: caption }, options)
@@ -121,7 +129,7 @@ export async function animate(sock, jid, quoted, frames, delay = 1500, mentions 
 }
 
 const unwrapMsg = (m = {}) =>
-  m.ephemeralMessage?.message || m.viewOnceMessage?.message || m.viewOnceMessageV2?.message || m
+  m.ephemeralMessage?.message || m.viewOnceMessage?.message || m.viewOnceMessageV2?.message || m.viewOnceMessageV2Extension?.message || m
 
 /** Download media attached to the message, or to the message it replies to. */
 export async function getMedia(sock, msg, kinds = ['imageMessage', 'videoMessage', 'stickerMessage']) {

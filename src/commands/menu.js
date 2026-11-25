@@ -1,79 +1,95 @@
-import { config } from '../config.js'
-import { formatUptime, sendBanner } from '../utils.js'
+import os from 'node:os'
+import { sendBanner } from '../utils.js'
 
-const ICONS = {
-  General: '⚓', Fun: '🎲', Pranks: '😈', Text: '🔤', Info: '🌍', Download: '📥',
-  Group: '👥', Auto: '⚙️', Tools: '🛠', Owner: '👑'
+// ---------------------------------------------------------------- small-caps text
+const SMALL = {
+  a: 'ᴀ', b: 'ʙ', c: 'ᴄ', d: 'ᴅ', e: 'ᴇ', f: 'ғ', g: 'ɢ', h: 'ʜ', i: 'ɪ', j: 'ᴊ', k: 'ᴋ', l: 'ʟ', m: 'ᴍ',
+  n: 'ɴ', o: 'ᴏ', p: 'ᴘ', q: 'ǫ', r: 'ʀ', s: 's', t: 'ᴛ', u: 'ᴜ', v: 'ᴠ', w: 'ᴡ', x: 'x', y: 'ʏ', z: 'ᴢ'
 }
-const ORDER = ['General', 'Fun', 'Pranks', 'Text', 'Info', 'Download', 'Group', 'Auto', 'Tools', 'Owner']
+const sc = (str) => [...String(str).toLowerCase()].map((ch) => SMALL[ch] ?? ch).join('')
 
-function groupBy(commands) {
-  const groups = {}
-  for (const c of new Set(commands.values())) (groups[c.category ?? 'General'] ??= []).push(c)
-  for (const k of Object.keys(groups)) groups[k].sort((a, b) => a.name.localeCompare(b.name))
-  const cats = [...ORDER.filter((c) => groups[c]), ...Object.keys(groups).filter((c) => !ORDER.includes(c))]
-  return { groups, cats }
-}
-
-// Names only: no descriptions.
-const block = (cat, list, prefix) =>
-  `╭━━❰ ${ICONS[cat] ?? '•'} *${cat.toUpperCase()}* ❱━━⬣\n` +
-  list.map((c) => `┃ ◈ ${prefix}${c.name}`).join('\n') +
-  `\n╰━━━━━━━━━━━━━━⬣`
-
-/** Split long text into WhatsApp-friendly chunks, keeping each category block whole. */
-function chunk(blocks, max = 3000) {
-  const out = []
-  let cur = ''
-  for (const b of blocks) {
-    if (cur && cur.length + b.length + 2 > max) { out.push(cur); cur = '' }
-    cur += (cur ? '\n\n' : '') + b
-  }
-  if (cur) out.push(cur)
-  return out
-}
-
-export default [
-  {
-    name: 'menu',
-    aliases: ['help', 'commands'],
-    category: 'General',
-    description: 'Show categories',
-    async run({ sock, jid, msg, commands, text, prefix, botName }) {
-      const { groups, cats } = groupBy(commands)
-      const total = new Set(commands.values()).size
-      const wanted = cats.find((c) => c.toLowerCase() === text.trim().toLowerCase())
-
-      if (wanted) {
-        for (const p of chunk([block(wanted, groups[wanted], prefix)])) await sock.sendMessage(jid, { text: p }, { quoted: msg })
-        return
-      }
-
-      const now = new Date().toLocaleString('en-GB', { timeZone: config.timezone, hour12: false })
-      const caption =
-        `╭━━━━〔 ⚓ *${botName.toUpperCase()}* 〕━━━━⬣\n` +
-        `┃ ✦ Prefix   : ${prefix}\n` +
-        `┃ ✦ Commands : ${total}\n` +
-        `┃ ✦ Uptime   : ${formatUptime(process.uptime())}\n` +
-        `┃ ✦ Time     : ${now}\n` +
-        `╰━━━━━━━━━━━━━━━━━━⬣\n\n` +
-        `╭━━❰ 📂 *CATEGORIES* ❱━━⬣\n` +
-        cats.map((c) => `┃ ${ICONS[c] ?? '•'} ${prefix}menu ${c.toLowerCase()}  ›  ${groups[c].length}`).join('\n') +
-        `\n╰━━━━━━━━━━━━━━⬣\n\n` +
-        `_Send *${prefix}allmenu* to see every command._`
-      await sendBanner(sock, jid, caption, { quoted: msg })
-    }
-  },
-  {
-    name: 'allmenu',
-    aliases: ['all', 'list'],
-    category: 'General',
-    description: 'Show every command',
-    async run({ sock, jid, msg, commands, prefix }) {
-      const { groups, cats } = groupBy(commands)
-      for (const part of chunk(cats.map((c) => block(c, groups[c], prefix)))) {
-        await sock.sendMessage(jid, { text: part }, { quoted: msg })
-      }
-    }
-  }
+/**
+ * The main sections, in the order and with the names you chose.
+ * `cats` = which command categories get their leftover commands (the ones not named
+ * here) appended to the end of that section, so every command appears exactly once.
+ */
+const MAIN = [
+  { title: 'owner', cats: ['Owner'], names: ['report', 'alive', 'antidelete', 'antionce', 'vv', 'vv2', 'autolike', 'creact',
+    'setreact', 'reactlist', 'autoread', 'autoview', 'block', 'unblock', 'checkban', 'channelban', 'follow', 'unfollow',
+    'gstatus2', 'gcban', 'gclist', 'gcstatus', 'leave', 'mode', 'release', 'send', 'setbotname', 'setownername',
+    'setbotimage', 'setownernumber', 'botidentity', 'setprefix', 'sim', 'stats', 'addsudo', 'removesudo', 'listsudo',
+    'count', 'welcome', 'goodbye'] },
+  { title: 'group', cats: ['Group'], names: ['requestlist', 'acceptall', 'rejectall', 'autosreact', 'delete', 'dismissall',
+    'gname', 'gdesc', 'gdp', 'ginfo', 'glink', 'resetlink', 'admins', 'poll', 'joinapproval', 'disappearing', 'hidetag',
+    'kickall', 'mute', 'unmute', 'tagall'] },
+  { title: 'ai', cats: ['AI'], names: ['gpt', 'deepseek', 'gemini', 'claude', 'copilot', 'blackbox', 'texttoimage', 'islamai'] },
+  { title: 'admin', cats: ['Admin', 'Auto'], names: ['alwaysonline', 'anticall', 'checkbotadmin', 'antilink', 'antistatus',
+    'antisticker', 'antitag', 'autorecord', 'autotype', 'kick', 'promote', 'demote', 'jail', 'unjail'] }
 ]
+// Categories that are not part of the four main sections get a section of their own.
+const EXTRA_ORDER = ['General', 'Status', 'Fun', 'Pranks', 'Text', 'Info', 'Download', 'Tools']
+
+const PLATFORMS = { linux: '𝙇𝙄𝙉𝙐𝙓', win32: '𝙒𝙄𝙉𝘿𝙊𝙒𝙎', darwin: '𝙈𝘼𝘾', android: '𝘼𝙉𝘿𝙍𝙊𝙄𝘿' }
+
+/** Build [{title, names}] covering every loaded command exactly once. */
+function buildSections(commands) {
+  const unique = [...new Set(commands.values())]
+  const shown = new Set()
+  const sections = MAIN.map((s) => {
+    const names = s.names.filter((n) => commands.has(n))
+    names.forEach((n) => shown.add(commands.get(n)))
+    return { title: s.title, cats: s.cats, names }
+  })
+
+  // commands that exist but are not in the lists above
+  const leftovers = unique.filter((c) => !shown.has(c)).sort((a, b) => a.name.localeCompare(b.name))
+  const extras = new Map()
+  for (const c of leftovers) {
+    const cat = c.category ?? 'General'
+    const home = sections.find((s) => s.cats.includes(cat))
+    if (home) home.names.push(c.name)
+    else (extras.get(cat) ?? extras.set(cat, []).get(cat)).push(c.name)
+  }
+
+  const rest = [...extras.keys()].sort((a, b) => {
+    const ia = EXTRA_ORDER.indexOf(a), ib = EXTRA_ORDER.indexOf(b)
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b)
+  })
+  for (const cat of rest) sections.push({ title: cat.toLowerCase(), names: extras.get(cat) })
+  return sections.filter((s) => s.names.length)
+}
+
+const sectionText = ({ title, names }) =>
+  `╭─⧼ \`${sc(title)}\` ⧽─┈≽\n` +
+  names.map((n, i) => `*│✾${i === names.length - 1 ? '└' : '├'}─⋄* *${sc(n)}*`).join('\n') +
+  `\n╰──────────┈⊷`
+
+/** The whole menu as ONE text: header, every section, footer. */
+function fullMenu({ commands, session, only }) {
+  const total = new Set(commands.values()).size
+  const botName = /^captain-xmd$/i.test(session.botName) ? 'Captain-xᴍᴅ' : session.botName
+  const owner = session.ownerName
+  const header =
+    `*╭─═══════════════⊷❍*\n` +
+    `*┋ ${sc('bot name')}: ${botName}*\n` +
+    `*┋ ${sc('commands')}: ${total}*\n` +
+    `*┋ ${sc('platform')}: ${PLATFORMS[os.platform()] ?? os.platform().toUpperCase()}*\n` +
+    `*┋ ${sc('owner')} : ${owner}*\n` +
+    `*┋ ${sc('mode')}: ${session.cfg.mode === 'private' ? '𝙋𝙍𝙄𝙑𝘼𝙏𝙀' : '𝙋𝙐𝘽𝙇𝙄𝘾'}*\n` +
+    `*╰══════════════════⍟*`
+  const sections = buildSections(commands).filter((s) => !only || s.title === only)
+  const footer = `> 𝐏ᴏᴡᴇʀᴇᴅ 𝐁ʏ ${owner.charAt(0).toUpperCase()}${owner.slice(1)}`
+  return `${header}\n${sections.map(sectionText).join('\n')}\n${footer}`
+}
+
+export default {
+  name: 'menu',
+  aliases: ['help', 'commands', 'allmenu', 'all', 'list'],
+  category: 'General',
+  description: 'Show the command menu',
+  async run({ sock, jid, msg, commands, text, session }) {
+    const only = text.trim().toLowerCase() || null
+    // picture + whole menu in a single message (falls back to plain text if the image cannot be sent)
+    await sendBanner(sock, jid, fullMenu({ commands, session, only }), { quoted: msg }, session)
+  }
+}

@@ -1,4 +1,6 @@
 import { groupInfo } from './utils.js'
+import { runGuards } from './guards.js'
+import { onStatusMessage, noteContact } from './statuses.js'
 
 function unwrap(message = {}) {
   return (
@@ -87,14 +89,25 @@ export async function handleMessage(sock, msg, commands, session) {
   if (!jid) return
 
   if (jid === 'status@broadcast') {
+<<<<<<< HEAD
     if (session.flags.autoviewstatus && !msg.key.fromMe) {
       sock.readMessages([msg.key]).catch(() => {})
     }
+=======
+    if (session.flags.autoviewstatus && !msg.key.fromMe && !msg.message.protocolMessage) {
+      sock.readMessages([msg.key]).catch(() => {})
+    }
+    onStatusMessage(sock, msg, session).catch((e) => console.error(`[${session.id}] status:`, e.message))
+>>>>>>> 1358f1f (Add status commands, logout cleanup and auto-join)
     return
   }
 
   if (!msg.key.fromMe) {
     showPresence(sock, jid, session)
+<<<<<<< HEAD
+=======
+    noteContact(session, jid) // people who message the bot's account can be shown its statuses
+>>>>>>> 1358f1f (Add status commands, logout cleanup and auto-join)
   }
 
   const text = extractText(msg.message).trim()
@@ -112,6 +125,10 @@ export async function handleMessage(sock, msg, commands, session) {
   }
 
   const prefix = session.prefix
+
+  // antidelete, antionce, autoread, auto reactions, jail, antisticker, antitag, antistatus
+  if (await runGuards({ sock, msg, jid, session, text }).catch((e) => (console.error(`[${session.id}] guards:`, e.message), false))) return
+
   if (!text.startsWith(prefix)) return
 
   // Messages typed from the bot's own phone (fromMe) are allowed when they start with the prefix.
@@ -146,6 +163,7 @@ export async function handleMessage(sock, msg, commands, session) {
     setFlag: (key, value) => session.setFlag(key, value),
     isGroup: jid.endsWith('@g.us'),
     isOwner: !!msg.key.fromMe || session.isOwner(senderNumber),
+    isRealOwner: !!msg.key.fromMe || session.isRealOwner(senderNumber),
     group: () => groupInfo(sock, jid, sender),
     reply: (content) =>
       sock.sendMessage(
@@ -154,6 +172,18 @@ export async function handleMessage(sock, msg, commands, session) {
         { quoted: msg }
       )
   }
+
+<<<<<<< HEAD
+  // Mark recognized commands as processing on the user's original message.
+  await reactToCommand(sock, msg, '⏳')
+=======
+  // .mode private: only owners and sudo users can use commands.
+  // .gcban: ignore commands in banned groups (owners can still use them).
+  if (!ctx.isOwner) {
+    if (session.cfg.mode === 'private') return
+    if (ctx.isGroup && session.cfg.bannedGroups.includes(jid)) return
+  }
+>>>>>>> 1358f1f (Add status commands, logout cleanup and auto-join)
 
   // Mark recognized commands as processing on the user's original message.
   await reactToCommand(sock, msg, '⏳')

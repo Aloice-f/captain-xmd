@@ -1,3 +1,4 @@
+
 import os from 'node:os'
 import { sendBanner } from '../utils.js'
 
@@ -69,6 +70,9 @@ const PLATFORMS = {
   darwin: '𝙈𝘼𝘾',
   android: '𝘼𝙉𝘿𝙍𝙊𝙄𝘿'
 }
+
+const GROUP_URL = 'https://chat.whatsapp.com/LpHONqMdieVAqj42x2mIKi'
+const CHANNEL_URL = 'https://whatsapp.com/channel/0029VbBwDHQG8l5I2Tjvv51G'
 
 // ---------------------------------------------------------------- sections builder
 function buildSections(commands) {
@@ -165,11 +169,8 @@ function fullMenu({ commands, session, only }) {
 
   const footer =
     `\n\n╭─〔 ☠ COMMUNITY ACCESS ☠ 〕─╮\n` +
-    `│ ⛓ GROUP ACCESS\n` +
-    `│ https://chat.whatsapp.com/LpHONqMdieVAqj42x2mIKi\n` +
-    `│\n` +
-    `│ ⌬ CHANNEL ACCESS\n` +
-    `│ https://whatsapp.com/channel/0029VbBwDHQG8l5I2Tjvv51G\n` +
+    `│ ⛓ GROUP       ➜ TAP BELOW\n` +
+    `│ ⌬ CHANNEL     ➜ TAP BELOW\n` +
     `╰────────────────────╯\n` +
     `> 𝐏ᴏᴡᴇʀᴇᴅ 𝐁ʏ ${owner.charAt(0).toUpperCase()}${owner.slice(1)}`
 
@@ -208,7 +209,6 @@ export default {
       } catch (bannerError) {
         console.error('[MENU-BANNER-ERROR]', bannerError)
 
-        // Fallback if the banner sender fails
         await sock.sendMessage(
           jid,
           { text: menu },
@@ -216,17 +216,49 @@ export default {
         )
       }
 
+      // Hidden URLs behind compact arrow-style buttons
+      try {
+        await sock.sendMessage(jid, {
+          text: '╭─〔 ☠ CAPTAIN CYBER ACCESS ☠ 〕─╮\n' +
+            '│ CONNECTION ESTABLISHED\n' +
+            '│ SELECT YOUR ACCESS POINT\n' +
+            '╰────────────────────────╯',
+          footer: 'CAPTAIN-XMD // CYBER LAB',
+          templateButtons: [
+            {
+              index: 1,
+              urlButton: {
+                displayText: '⛓ GROUP ➜',
+                url: GROUP_URL
+              }
+            },
+            {
+              index: 2,
+              urlButton: {
+                displayText: '⌬ CHANNEL ➜',
+                url: CHANNEL_URL
+              }
+            }
+          ]
+        }, { quoted: msg })
+      } catch (buttonError) {
+        console.error('[MENU-BUTTON-ERROR]', buttonError)
+
+        await sock.sendMessage(jid, {
+          text:
+            '☠ COMMUNITY ACCESS ☠\n\n' +
+            `⛓ GROUP ➜ ${GROUP_URL}\n\n` +
+            `⌬ CHANNEL ➜ ${CHANNEL_URL}`
+        }, { quoted: msg })
+      }
+
     } catch (error) {
       console.error('[MENU-COMMAND-ERROR]', error)
 
       try {
-        await sock.sendMessage(
-          jid,
-          {
-            text: '❌ Menu failed to load. Check the bot terminal for [MENU-COMMAND-ERROR].'
-          },
-          { quoted: msg }
-        )
+        await sock.sendMessage(jid, {
+          text: '❌ Menu failed to load. Check the bot terminal for [MENU-COMMAND-ERROR].'
+        }, { quoted: msg })
       } catch (sendError) {
         console.error('[MENU-ERROR-REPLY]', sendError)
       }

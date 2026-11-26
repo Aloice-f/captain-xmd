@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import { sendBanner } from '../utils.js'
 
@@ -144,11 +143,13 @@ function fullMenu({ commands, session, only }) {
     : (session?.botName || 'Captain XMD')
 
   const owner = session?.ownerName || 'Captain'
+
   const mode = session?.cfg?.mode === 'private'
     ? '𝙋𝙍𝙄𝙑𝘼𝙏𝙀'
     : '𝙋𝙐𝘽𝙇𝙄𝘾'
 
-  const platform = PLATFORMS[os.platform()] ?? os.platform().toUpperCase()
+  const platform =
+    PLATFORMS[os.platform()] ?? os.platform().toUpperCase()
 
   const header =
     `*╭─═══════════════⊷❍*\n` +
@@ -163,11 +164,18 @@ function fullMenu({ commands, session, only }) {
     .filter((s) => !only || s.title === only)
 
   const footer =
+    `\n\n╭─〔 ☠ COMMUNITY ACCESS ☠ 〕─╮\n` +
+    `│ ⛓ GROUP ACCESS\n` +
+    `│ https://chat.whatsapp.com/LpHONqMdieVAqj42x2mIKi\n` +
+    `│\n` +
+    `│ ⌬ CHANNEL ACCESS\n` +
+    `│ https://whatsapp.com/channel/0029VbBwDHQG8l5I2Tjvv51G\n` +
+    `╰────────────────────╯\n` +
     `> 𝐏ᴏᴡᴇʀᴇᴅ 𝐁ʏ ${owner.charAt(0).toUpperCase()}${owner.slice(1)}`
 
   return (
     `${header}\n` +
-    `${sections.map(sectionText).join('\n')}\n` +
+    `${sections.map(sectionText).join('\n')}` +
     `${footer}`
   )
 }
@@ -189,7 +197,6 @@ export default {
         only
       })
 
-      // Send the menu
       try {
         await sendBanner(
           sock,
@@ -202,54 +209,27 @@ export default {
         console.error('[MENU-BANNER-ERROR]', bannerError)
 
         // Fallback if the banner sender fails
-        await sock.sendMessage(jid, {
-          text: menu
-        }, { quoted: msg })
-      }
-
-      // Community buttons
-      try {
-        await sock.sendMessage(jid, {
-          text: '╭─〔 ☠ CAPTAIN CYBER ACCESS ☠ 〕─╮\n\n' +
-            '⌁ CONNECTION ESTABLISHED\n' +
-            '⌁ SELECT YOUR ACCESS POINT\n\n' +
-            '╰───────────────⊷',
-          footer: 'CAPTAIN-XMD // CYBER LAB',
-          templateButtons: [
-            {
-              index: 1,
-              urlButton: {
-                displayText: '⛓ GROUP ACCESS',
-                url: 'https://chat.whatsapp.com/LpHONqMdieVAqj42x2mIKi'
-              }
-            },
-            {
-              index: 2,
-              urlButton: {
-                displayText: '⌬ CHANNEL ACCESS',
-                url: 'https://whatsapp.com/channel/0029VbBwDHQG8l5I2Tjvv51G'
-              }
-            }
-          ]
-        }, { quoted: msg })
-      } catch (buttonError) {
-        console.error('[MENU-BUTTON-ERROR]', buttonError)
-
-        // Text fallback if WhatsApp rejects the buttons
-        await sock.sendMessage(jid, {
-          text:
-            '☠ CAPTAIN CYBER ACCESS ☠\n\n' +
-            '⛓ GROUP: https://chat.whatsapp.com/LpHONqMdieVAqj42x2mIKi\n\n' +
-            '⌬ CHANNEL: https://whatsapp.com/channel/0029VbBwDHQG8l5I2Tjvv51G'
-        }, { quoted: msg })
+        await sock.sendMessage(
+          jid,
+          { text: menu },
+          { quoted: msg }
+        )
       }
 
     } catch (error) {
       console.error('[MENU-COMMAND-ERROR]', error)
 
-      await sock.sendMessage(jid, {
-        text: '❌ Menu failed to load. Check the bot terminal for [MENU-COMMAND-ERROR].'
-      }, { quoted: msg })
+      try {
+        await sock.sendMessage(
+          jid,
+          {
+            text: '❌ Menu failed to load. Check the bot terminal for [MENU-COMMAND-ERROR].'
+          },
+          { quoted: msg }
+        )
+      } catch (sendError) {
+        console.error('[MENU-ERROR-REPLY]', sendError)
+      }
     }
   }
 }

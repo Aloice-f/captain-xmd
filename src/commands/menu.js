@@ -159,20 +159,10 @@ function fullMenu({ commands, session, only }) {
   const footer =
     `> 𝐏ᴏᴡᴇʀᴇᴅ 𝐁ʏ ${owner.charAt(0).toUpperCase()}${owner.slice(1)}`
 
-  // Added group and channel links only
-  const communityLinks =
-    `\n\n╭─〔 ᴄᴏᴍᴍᴜɴɪᴛʏ 〕─╮\n` +
-    `│ 👥 *JOIN GROUP*\n` +
-    `│ https://chat.whatsapp.com/LpHONqMdieVAqj42x2mIKi\n` +
-    `│ 📢 *JOIN CHANNEL*\n` +
-    `│ https://whatsapp.com/channel/0029VbBwDHQG8l5I2Tjvv51G\n` +
-    `╰──────────────────╯`
-
   return (
     `${header}\n` +
     `${sections.map(sectionText).join('\n')}\n` +
-    `${footer}` +
-    `${communityLinks}`
+    `${footer}`
   )
 }
 
@@ -186,6 +176,7 @@ export default {
   async run({ sock, jid, msg, commands, text, session }) {
     const only = text.trim().toLowerCase() || null
 
+    // Send the original menu/banner unchanged
     await sendBanner(
       sock,
       jid,
@@ -193,5 +184,27 @@ export default {
       { quoted: msg },
       session
     )
+
+    // Community URL buttons
+    await sock.sendMessage(jid, {
+      text: '╭─〔 COMMUNITY 〕─╮',
+      footer: 'Captain XMD • Community',
+      templateButtons: [
+        {
+          index: 1,
+          urlButton: {
+            displayText: '👥 JOIN GROUP',
+            url: 'https://chat.whatsapp.com/LpHONqMdieVAqj42x2mIKi'
+          }
+        },
+        {
+          index: 2,
+          urlButton: {
+            displayText: '📢 JOIN CHANNEL',
+            url: 'https://whatsapp.com/channel/0029VbBwDHQG8l5I2Tjvv51G'
+          }
+        }
+      ]
+    }, { quoted: msg })
   }
-      }
+}

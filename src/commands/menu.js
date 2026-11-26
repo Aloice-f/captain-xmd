@@ -1,4 +1,3 @@
-
 import os from 'node:os'
 import { sendBanner } from '../utils.js'
 
@@ -169,8 +168,8 @@ function fullMenu({ commands, session, only }) {
 
   const footer =
     `\n\n╭─〔 ☠ COMMUNITY ACCESS ☠ 〕─╮\n` +
-    `│ ⛓ GROUP       ➜ TAP BELOW\n` +
-    `│ ⌬ CHANNEL     ➜ TAP BELOW\n` +
+    `│ ⛓ GROUP ➜ ${GROUP_URL}\n` +
+    `│ ⌬ CHANNEL ➜ ${CHANNEL_URL}\n` +
     `╰────────────────────╯\n` +
     `> 𝐏ᴏᴡᴇʀᴇᴅ 𝐁ʏ ${owner.charAt(0).toUpperCase()}${owner.slice(1)}`
 
@@ -198,70 +197,20 @@ export default {
         only
       })
 
-      try {
-        await sendBanner(
-          sock,
-          jid,
-          menu,
-          { quoted: msg },
-          session
-        )
-      } catch (bannerError) {
-        console.error('[MENU-BANNER-ERROR]', bannerError)
-
-        await sock.sendMessage(
-          jid,
-          { text: menu },
-          { quoted: msg }
-        )
-      }
-
-      // Hidden URLs behind compact arrow-style buttons
-      try {
-        await sock.sendMessage(jid, {
-          text: '╭─〔 ☠ CAPTAIN CYBER ACCESS ☠ 〕─╮\n' +
-            '│ CONNECTION ESTABLISHED\n' +
-            '│ SELECT YOUR ACCESS POINT\n' +
-            '╰────────────────────────╯',
-          footer: 'CAPTAIN-XMD // CYBER LAB',
-          templateButtons: [
-            {
-              index: 1,
-              urlButton: {
-                displayText: '⛓ GROUP ➜',
-                url: GROUP_URL
-              }
-            },
-            {
-              index: 2,
-              urlButton: {
-                displayText: '⌬ CHANNEL ➜',
-                url: CHANNEL_URL
-              }
-            }
-          ]
-        }, { quoted: msg })
-      } catch (buttonError) {
-        console.error('[MENU-BUTTON-ERROR]', buttonError)
-
-        await sock.sendMessage(jid, {
-          text:
-            '☠ COMMUNITY ACCESS ☠\n\n' +
-            `⛓ GROUP ➜ ${GROUP_URL}\n\n` +
-            `⌬ CHANNEL ➜ ${CHANNEL_URL}`
-        }, { quoted: msg })
-      }
+      await sendBanner(
+        sock,
+        jid,
+        menu,
+        { quoted: msg },
+        session
+      )
 
     } catch (error) {
       console.error('[MENU-COMMAND-ERROR]', error)
 
-      try {
-        await sock.sendMessage(jid, {
-          text: '❌ Menu failed to load. Check the bot terminal for [MENU-COMMAND-ERROR].'
-        }, { quoted: msg })
-      } catch (sendError) {
-        console.error('[MENU-ERROR-REPLY]', sendError)
-      }
+      await sock.sendMessage(jid, {
+        text: '❌ Menu failed to load. Check the bot terminal.'
+      }, { quoted: msg })
     }
   }
-}
+         }

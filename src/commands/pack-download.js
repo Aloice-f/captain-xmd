@@ -71,179 +71,42 @@ async function ytBuffer(url, kind) {
 const YT_HINT =
   '\n\nYouTube often blocks downloads from cloud servers (like Render). If this keeps failing it is YouTube, not the bot.'
 
-async function jamendoSearch(query) {
-  const clientId = process.env.JAMENDO_CLIENT_ID
+// ==========================================
+// TUBIDY SEARCH
+// ==========================================
 
-  if (!clientId) {
-    throw new Error(
-      'Jamendo is not configured. Set JAMENDO_CLIENT_ID in Render environment variables.'
-    )
-  }
-
-  const api = new URL('https://api.jamendo.com/v3.0/tracks/')
-  api.searchParams.set('client_id', clientId)
-  api.searchParams.set('format', 'json')
-  api.searchParams.set('limit', '20')
-  api.searchParams.set('search', query)
-  api.searchParams.set('audioformat', 'mp31')
-  api.searchParams.set('audiodlformat', 'mp32')
-  api.searchParams.set('include', 'musicinfo')
-
-  const response = await fetch(api)
-
-  if (!response.ok) {
-    throw new Error(`Jamendo search failed (${response.status}).`)
-  }
-
-  const json = await response.json()
-
-  if (json?.headers?.status !== 'success') {
-    throw new Error(json?.headers?.error_message || 'Jamendo search failed.')
-  }
-
-  return json.results || []
-}
-
-async function jamendoDownload(track) {
-  if (!track.audiodownload_allowed) {
-    throw new Error('This track is not permitted for download. Try another result.')
-  }
-
-  const clientId = process.env.JAMENDO_CLIENT_ID
-
-  if (!clientId || !track.id) {
-    throw new Error('Jamendo download is missing its client ID or track ID.')
-  }
-
-  // Prefer the download URL returned directly by Jamendo.
-  // Use the official file endpoint only if the search did not return one.
-  let downloadUrl = track.audiodownload
-
-  if (!downloadUrl) {
-    const fileUrl = new URL('https://api.jamendo.com/v3.0/tracks/file/')
-    fileUrl.searchParams.set('client_id', clientId)
-    fileUrl.searchParams.set('id', String(track.id))
-    fileUrl.searchParams.set('audioformat', 'mp32')
-    fileUrl.searchParams.set('action', 'download')
-    downloadUrl = fileUrl.toString()
-  }
-
-  if (!downloadUrl.startsWith('https://')) {
-    throw new Error('Jamendo returned an invalid download URL.')
-  }
-
-  const response = await fetch(downloadUrl, {
-    redirect: 'follow',
-    headers: {
-      'User-Agent': 'Captain-XMD Music Downloader'
-    }
-  })
-
-  if (!response.ok) {
-    throw new Error(`Audio download failed (${response.status}).`)
-  }
-
-  if (!response.body) {
-    throw new Error('Jamendo returned an empty audio response.')
-  }
-
-  const maxBytes = MAX_AUDIO_MB * 1_000_000
-  const chunks = []
-  let total = 0
-
-  for await (const chunk of response.body) {
-    total += chunk.length
-
-    if (total > maxBytes) {
-      throw new Error(`Audio exceeds ${MAX_AUDIO_MB} MB limit.`)
-    }
-
-    chunks.push(chunk)
-  }
-
-  if (!total) {
-    throw new Error('Downloaded audio is empty.')
-  }
-
-  const buffer = Buffer.concat(chunks)
-  const contentType = (response.headers.get('content-type') || '').toLowerCase()
-
-  const isMp3 =
-    buffer.length > 3 &&
-    (buffer.subarray(0, 3).toString() === 'ID3' ||
-      (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0))
-
-  if (!contentType.includes('audio') && !isMp3) {
-    throw new Error(
-      `Jamendo returned non-audio data (${contentType || 'unknown type'}).`
-    )
-  }
-
-  if (!isMp3) {
-    throw new Error('The returned file is not a valid MP3 file.')
-  }
-
-  return buffer
-}
-
-function audioCmd(name, aliases = [], desc) {
+function tubidySearchCmd(name, aliases = []) {
   return {
     name,
     aliases,
     category: 'Download',
-    description: desc,
+    description: 'Search music on Tubidy',
     usage: '<song name>',
 
-    async run({ sock, jid, msg, text, reply }) {
-      if (!text) return reply(`Usage: .${name} artist song title`)
-
-      try {
-        const results = await jamendoSearch(text)
-
-        // Only select a track whose artist permits downloading.
-        const track = results.find(
-          (item) => item.audiodownload_allowed && item.audiodownload
-        )
-
-        if (!track) {
-          return reply(
-            '❌ No permitted downloadable track was found for that search. Try another song or artist.'
-          )
-        }
-
-        const seconds = Number(track.duration || 0)
-
-        if (seconds > 20 * 60) {
-          return reply('❌ That track is longer than 20 minutes.')
-        }
-
-        const title = `${track.name} — ${track.artist_name}`
-
-        await sendBanner(
-          sock,
-          jid,
-          `🎵 *${title}*\n${fmtDur(seconds)} • Jamendo\n\n⬇️ _Downloading MP3..._`,
-          { quoted: msg }
-        ).catch(() => {})
-
-        const audio = await jamendoDownload(track)
-
-        await sock.sendMessage(
-          jid,
-          {
-            audio,
-            mimetype: 'audio/mpeg',
-            fileName: `${safeFilename(track.name)}.mp3`,
-            ptt: false
-          },
-          { quoted: msg }
-        )
-      } catch (e) {
-        await reply(`❌ ${e.message}`)
+    async run({ reply, text }) {
+      if (!text) {
+        return reply(`Usage: .${name} artist song title`)
       }
+
+      const query = text.trim()
+
+      const searchUrl =
+        `https://www.google.com/search?q=${encodeURIComponent('Tubidy ' + query)}`
+
+      await reply(
+        `🎵 *CAPTAIN XMD MUSIC SEARCH*\n\n` +
+        `🔎 *Song:* ${query}\n\n` +
+        `🌐 *Search Tubidy:*\n${searchUrl}\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `_Music search generated successfully._`
+      )
     }
   }
 }
+
+// ==========================================
+// VIDEO COMMANDS
+// ==========================================
 
 function videoCmd(name, aliases = [], desc) {
   return {
@@ -263,7 +126,8 @@ function videoCmd(name, aliases = [], desc) {
           return reply('❌ That is longer than 10 minutes.')
         }
 
-        await reply(`🎬 *${v.title}*\n_Downloading..._`)
+        await reply(`🎬 *${v.title}*\n_Downloading..._)
+
         const video = await ytBuffer(v.url, 'video')
 
         if (video.length > 16e6) {
@@ -279,7 +143,11 @@ function videoCmd(name, aliases = [], desc) {
         } else {
           await sock.sendMessage(
             jid,
-            { video, caption: v.title, mimetype: 'video/mp4' },
+            {
+              video,
+              caption: v.title,
+              mimetype: 'video/mp4'
+            },
             { quoted: msg }
           )
         }
@@ -290,8 +158,14 @@ function videoCmd(name, aliases = [], desc) {
   }
 }
 
+// ==========================================
+// TIKTOK
+// ==========================================
+
 async function tikwm(url) {
-  const j = await getJson(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`)
+  const j = await getJson(
+    `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`
+  )
 
   if (j.code !== 0 || !j.data) {
     throw new Error(j.msg || 'Could not read that TikTok link.')
@@ -300,12 +174,20 @@ async function tikwm(url) {
   return j.data
 }
 
+// ==========================================
+// COMMAND LIST
+// ==========================================
+
 export default [
-  audioCmd('play', ['song'], 'Download a permitted song as MP3'),
-  audioCmd('ytmp3', [], 'Search and download permitted audio'),
+  // Tubidy search commands
+  tubidySearchCmd('tubidy', ['tub']),
+  tubidySearchCmd('tubidymusic', ['tubmusic']),
+
+  // Existing YouTube video commands
   videoCmd('video', [], 'Download a YouTube video'),
   videoCmd('ytmp4', [], 'YouTube link/name to video'),
 
+  // YouTube search
   {
     name: 'yts',
     aliases: ['ytsearch'],
@@ -326,7 +208,9 @@ export default [
           list
             .map(
               (v, i) =>
-                `${i + 1}. *${v.title}*\n   ${v.author.name} • ${v.timestamp}\n   ${v.url}`
+                `${i + 1}. *${v.title}*\n` +
+                `   ${v.author.name} • ${v.timestamp}\n` +
+                `   ${v.url}`
             )
             .join('\n\n')
         )
@@ -336,6 +220,7 @@ export default [
     }
   },
 
+  // TikTok video
   {
     name: 'tiktok',
     aliases: ['tt'],
@@ -353,7 +238,10 @@ export default [
 
         await sock.sendMessage(
           jid,
-          { video: { url: d.play }, caption: d.title || 'TikTok' },
+          {
+            video: { url: d.play },
+            caption: d.title || 'TikTok'
+          },
           { quoted: msg }
         )
       } catch (e) {
@@ -362,6 +250,7 @@ export default [
     }
   },
 
+  // TikTok audio
   {
     name: 'tiktokaudio',
     aliases: ['tta'],
@@ -379,7 +268,10 @@ export default [
 
         await sock.sendMessage(
           jid,
-          { audio: { url: d.music }, mimetype: 'audio/mpeg' },
+          {
+            audio: { url: d.music },
+            mimetype: 'audio/mpeg'
+          },
           { quoted: msg }
         )
       } catch (e) {
@@ -388,6 +280,7 @@ export default [
     }
   },
 
+  // Direct file downloader
   {
     name: 'fetch',
     aliases: ['dl', 'download'],
@@ -396,20 +289,36 @@ export default [
     usage: '<url>',
 
     async run({ sock, jid, msg, args, reply }) {
-      if (!args[0]) return reply('Usage: .fetch https://example.com/file.pdf')
+      if (!args[0]) {
+        return reply('Usage: .fetch https://example.com/file.pdf')
+      }
 
       try {
         await assertPublicUrl(args[0])
 
         const { buffer, type, url } = await getBuffer(args[0], 50)
-        const name = decodeURIComponent(url.pathname.split('/').pop() || 'file') || 'file'
+
+        const name =
+          decodeURIComponent(url.pathname.split('/').pop() || 'file') || 'file'
 
         if (type.startsWith('image/')) {
-          await sock.sendMessage(jid, { image: buffer }, { quoted: msg })
+          await sock.sendMessage(
+            jid,
+            { image: buffer },
+            { quoted: msg }
+          )
         } else if (type.startsWith('video/') && buffer.length < 16e6) {
-          await sock.sendMessage(jid, { video: buffer }, { quoted: msg })
+          await sock.sendMessage(
+            jid,
+            { video: buffer },
+            { quoted: msg }
+          )
         } else if (type.startsWith('audio/')) {
-          await sock.sendMessage(jid, { audio: buffer, mimetype: type }, { quoted: msg })
+          await sock.sendMessage(
+            jid,
+            { audio: buffer, mimetype: type },
+            { quoted: msg }
+          )
         } else {
           await sock.sendMessage(
             jid,
